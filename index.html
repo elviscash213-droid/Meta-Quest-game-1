@@ -109,37 +109,35 @@ function combatHit(){if(ruleMode==='BASEBALL'){announce('COMBAT DISABLED IN BASE
 }
 
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='Loading imported animated players…';document.body.appendChild(modelStatus);
-const mixers=[];const modelURL='https://raw.githubusercontent.com/mrdoob/three.js/r170/examples/models/gltf/Soldier.glb';
-new GLTFLoader().load(modelURL,gltf=>{
- const clips=gltf.animations;const available=clips.map(c=>c.name);
- const idle=clips.find(c=>/^idle$/i.test(c.name))||clips[0],walk=clips.find(c=>/^walk$/i.test(c.name)),run=clips.find(c=>/^run$/i.test(c.name));
- if(!idle)throw Error('Imported player model has no animations');
- // GLTF skeletons must be cloned with SkeletonUtils, not Object3D.clone.
+const mixers=[];
+const athleteURLs=['https://models.codelove.in/models/sports-male-01.glb','https://models.codelove.in/models/sports-male-02.glb'];
+const athleteLoader=new GLTFLoader();
+let athletesLoaded=0;
+athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
  import('three/addons/utils/SkeletonUtils.js').then(({clone})=>{
   players.forEach((p,i)=>{
+   if(i%athleteURLs.length!==variant)return;
    const model=clone(gltf.scene);
-   // Single normalization only: the previous build scaled the rig twice and produced giants.
-   const sourceBox=new THREE.Box3().setFromObject(model);
-   const height=sourceBox.getSize(new THREE.Vector3()).y;
-   if(!Number.isFinite(height)||height<.01)throw Error('Invalid character model dimensions');
-   const scale=THREE.MathUtils.clamp(1.78/height,.001,100);
+   model.updateMatrixWorld(true);
+   const box=new THREE.Box3().setFromObject(model);
+   const height=box.getSize(new THREE.Vector3()).y;
+   if(!Number.isFinite(height)||height<.01){reportError('Athlete dimensions',url);return}
+   const scale=1.8/height;
    model.scale.setScalar(scale);
-   model.position.set(-sourceBox.getCenter(new THREE.Vector3()).x*scale,-sourceBox.min.y*scale,-sourceBox.getCenter(new THREE.Vector3()).z*scale);
+   model.position.set(-box.getCenter(new THREE.Vector3()).x*scale,-box.min.y*scale,-box.getCenter(new THREE.Vector3()).z*scale);
    model.rotation.y=Math.PI;
-   p.group.add(model);
-   p.group.children.forEach(child=>{if(child!==model)child.visible=false});
-   p.group.updateMatrixWorld(true);
-   const actorBox=new THREE.Box3().setFromObject(model);
-   if(actorBox.getSize(new THREE.Vector3()).y>3){reportError('Character scale','Imported character exceeds 3 metres; hiding oversized mesh');model.visible=false}
-   p.model=model;p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
-   p.actions={};for(const clip of clips)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
-   p.currentAction=p.mixer.clipAction(idle);p.currentAction.play();
-   p.clips={idle:idle.name,walk:walk?.name,run:run?.name};
+   p.group.add(model);p.model=model;
+   p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
+   p.actions={};for(const clip of gltf.animations)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
+   const idle=gltf.animations.find(c=>/idle/i.test(c.name));
+   if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
+   p.clips={idle:idle?.name,walk:gltf.animations.find(c=>/walk/i.test(c.name))?.name,run:gltf.animations.find(c=>/run/i.test(c.name))?.name};
   });
-  modelStatus.textContent=players.length+' imported Soldier actors (NOT baseball players) · '+available.join(', ');
- }).catch(e=>reportError('Skeleton cloning',e));
-},undefined,e=>{modelStatus.textContent='PLAYER IMPORT FAILED — NO GENERATED FALLBACK';reportError('Animated player GLB '+modelURL,e)});
-function playCharacter(p,name){if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
+  athletesLoaded++;
+  modelStatus.textContent='IMPORTED RIGGED ATHLETES: '+athletesLoaded+'/2 models · 9 actors · animation clips '+gltf.animations.length;
+ }).catch(e=>reportError('Athlete skeleton cloning',e));
+},undefined,e=>{modelStatus.textContent='ATHLETE IMPORT FAILED · '+url;reportError('Athlete import',e)}));
+function playCharacter(p,name){if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;if(!key)return;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
 
 let ball=null,velocity=new THREE.Vector3(),state={inning:1,half:'BOTTOM',home:0,away:0,hr:0,kos:0,outs:0,balls:0,strikes:0,bases:[false,false,false],mode:'BAT',flying:false,contact:false,gameOver:false},lastPitch=0,lastSwing=0;
 function count(){document.getElementById('count').textContent=state.half+' · '+state.balls+'-'+state.strikes+' · BASES '+state.bases.map(v=>v?'●':'○').join('')}
