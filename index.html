@@ -151,10 +151,10 @@ function takePitch(){if(!ball||!state.flying||state.contact)return;const inZone=
 function finishGame(){state.gameOver=true;state.flying=false;announce('FINAL · HOME '+state.home+' / AWAY '+state.away+' · HR '+state.hr+' · KOs '+state.kos);document.getElementById('panel').querySelector('b').textContent='FINAL SCORE · HOME '+state.home+' : AWAY '+state.away+' · HOME RUNS '+state.hr+' · KOs '+state.kos}
 
 // No procedural baseball mesh. Ball physics are disabled until an imported ball is loaded.
-const ballGeo=null,ballMat=null;
+const ballGeo=null,ballMat=null;let importedBall=null;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33765/v1/model.glb',g=>{importedBall=g.scene;loadStatus.textContent+=' · BASEBALL IMPORTED'},undefined,e=>reportError('Baseball import',e));
 function announce(t){if(/HOME RUN|KNOCKDOWN|FRACTURED|CRACK|STRIKE THREE/.test(t))beep(340,.14);document.getElementById('msg').textContent=t;setTimeout(()=>{if(document.getElementById('msg').textContent===t)document.getElementById('msg').textContent=''},1500)}
 function hud(){document.getElementById('score').textContent='INNING '+state.inning+' / 9 · HOME '+state.home+' : AWAY '+state.away;document.getElementById('status').textContent='HR '+state.hr+' · KOs '+state.kos+' · HP '+playerHP+' · OUTS '+state.outs;document.getElementById('mode').textContent='MODE: '+state.mode;count()}
-function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);announce('IMPORTED BASEBALL REQUIRED');return;velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
+function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);if(!importedBall){announce('WAITING FOR IMPORTED BASEBALL');return}ball=importedBall.clone(true);ball.position.set(0,1.8,-18);scene.add(ball);velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
 function out(){state.outs++;state.flying=false;clearCount();if(state.outs>=3){state.outs=0;state.bases=[false,false,false];state.inning++;announce(state.inning>9?'FINAL SCORE':'NEXT INNING');if(state.inning>9)finishGame()}else announce('OUT '+state.outs);hud()}
 function swing(){if(state.gameOver)return;lastSwing=performance.now();if(state.mode==='BRAWL'){combatHit();return}
 if(!ball||!state.flying){announce('WAIT FOR PITCH');return}
@@ -167,7 +167,7 @@ const controller0=renderer.xr.getController(0),controller1=renderer.xr.getContro
 // Quest controls: left trigger pitches; right trigger attacks only in fist mode.
 controller0.addEventListener('selectstart',pitch);
 controller1.addEventListener('selectstart',()=>{if(state.mode==='BRAWL'&&weaponKind==='FISTS')swing()});
-const weapon=new THREE.Group();controller1.add(weapon);weapon.visible=false; // No generated bat.
+const weapon=new THREE.Group();controller1.add(weapon);weapon.visible=false;let importedBatReady=false;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33763/v1/model.glb',g=>{const bat=g.scene;bat.rotation.x=-Math.PI/2;bat.position.set(0,0,-.4);weapon.add(bat);importedBatReady=true;loadStatus.textContent+=' · BAT IMPORTED'},undefined,e=>reportError('Bat import',e));
 renderer.xr.addEventListener('sessionstart',()=>{document.body.classList.add('in-vr');modelStatus.textContent='VR session started';loadStatus.style.display='none';modelStatus.style.display='none'});
 renderer.xr.addEventListener('sessionend',()=>{document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now(),buttonHeld=false;const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
 renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;
@@ -181,10 +181,10 @@ const session=renderer.xr.getSession();if(session){
   const b=right.gamepad.buttons;
   const grip=!!b[1]?.pressed;
   edge('rightGrip',grip,()=>{batHeld=true;announce('WEAPON GRIPPED')});
-  if(!grip&&batHeld){batHeld=false;prevBatTip=null;announce('WEAPON RELEASED')}weapon.visible=false;
+  if(!grip&&batHeld){batHeld=false;prevBatTip=null;announce('WEAPON RELEASED')}weapon.visible=grip&&weaponKind==='BAT'&&importedBatReady;
   edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BRAWL')switchWeapon();else takePitch()});
   edge('rightB',!!b[5]?.pressed,()=>{toggle()});
-  if(batHeld&&weaponKind==='BAT'){
+  if(batHeld&&weaponKind==='BAT'&&importedBatReady){
    const tip=controller1.localToWorld(new THREE.Vector3(0,0,-.85));
    if(prevBatTip){const speed=tip.distanceTo(prevBatTip)/Math.max(dt,.008);if(speed>2.8&&now-lastPhysicalSwing>430){lastPhysicalSwing=now;swing()}}
    prevBatTip=tip.clone();
