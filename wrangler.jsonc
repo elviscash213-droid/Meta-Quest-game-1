@@ -1,0 +1,9 @@
+
+{
+  "name": "meta-quest-game-1",
+  "compatibility_date": "2026-11-13",
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS"
+  }
+}
