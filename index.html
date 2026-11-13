@@ -4,10 +4,11 @@
 <style>body{margin:0;background:#080f19;color:#fff;font:16px system-ui;overflow:hidden}#hud{position:fixed;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;text-shadow:1px 2px 3px #000}#panel{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#091321dd;border:1px solid #7592aa;border-radius:12px;padding:12px;text-align:center;max-width:95vw}button{background:#c53b27;color:white;border:0;border-radius:7px;padding:10px;margin:3px;font-weight:bold}small{color:#b9c8d9}#msg{position:fixed;top:22%;width:100%;text-align:center;font-weight:900;font-size:28px;text-shadow:2px 3px #000;pointer-events:none}canvas{display:block}</style></head>
 <body><div id="hud"><b id="score">INNING 1 / 9 · HOME 0 : AWAY 0</b><b id="status">HR 0 · KOs 0 · OUTS 0</b></div><div id="msg"></div>
 <div id="panel"><b>NO RULES BASEBALL — PHASE 1 · IMPORTED STADIUM</b><div><button id="pitch">PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="reset">RESET</button></div><small>Quest: Enter VR, left stick moves, right trigger swings, left trigger pitches. Imported stadium loads online. Desktop buttons also work.</small></div>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
-import {VRButton} from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/webxr/VRButton.js';
-import {GLTFLoader} from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js';
+import * as THREE from 'three';
+import {VRButton} from 'three/addons/webxr/VRButton.js';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x8bbbe0);scene.fog=new THREE.Fog(0x8bbbe0,95,260);
 const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);camera.position.set(0,1.7,5);
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.xr.enabled=true;renderer.shadowMap.enabled=true;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
