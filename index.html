@@ -34,18 +34,7 @@ const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);came
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));renderer.xr.enabled=true;renderer.shadowMap.enabled=false;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
 scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(-30,65,25);scene.add(sun);
 const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.83});
-const fallbackField=new THREE.Group();
-const grass=mat(0x326c38),dirt=mat(0x9b6d48),white=mat(0xf3eee0),red=mat(0xb52c2d),blue=mat(0x204b87),skin=mat(0xd9a178),metal=mat(0x454b55);
-function mesh(g,m,x=0,y=0,z=0){let o=new THREE.Mesh(g,m);o.position.set(x,y,z);scene.add(o);fallbackField.add(o);return o}
-scene.add(fallbackField);
-mesh(new THREE.PlaneGeometry(400,400),grass).rotation.x=-Math.PI/2;
-const diamond=mesh(new THREE.PlaneGeometry(35,35),dirt,0,.012,-22);diamond.rotation.x=-Math.PI/2;diamond.rotation.z=Math.PI/4;
-function line(a,b){const pts=[new THREE.Vector3(...a),new THREE.Vector3(...b)];const o=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xffffff}));fallbackField.add(o)}
-line([0,.06,0],[46,.06,-46]);line([0,.06,0],[-46,.06,-46]);
-for(const [x,z] of [[0,0],[14,-14],[0,-28],[-14,-14]]){let b=mesh(new THREE.BoxGeometry(1,.09,1),white,x,.06,z);b.rotation.y=Math.PI/4}
-mesh(new THREE.CylinderGeometry(2.4,2.4,.13,32),dirt,0,.07,-18);
-const fence=mat(0x203f55);for(let i=0;i<42;i++){const a=Math.PI*.05+i*Math.PI*.9/41;const x=Math.cos(a)*83,z=-Math.sin(a)*83;let p=mesh(new THREE.BoxGeometry(4,4,.3),fence,x,2,z);p.rotation.y=-a+Math.PI/2}
-for(let side of [-1,1])for(let r=0;r<5;r++){let stand=mesh(new THREE.BoxGeometry(44,1.3,5),mat(r%2?0x43576b:0x5c7287),side*48,1.5+r*1.7,-32-r*6);stand.rotation.y=side*.36}
+const grass=new THREE.MeshStandardMaterial({color:0x326c38}),dirt=new THREE.MeshStandardMaterial({color:0x9b6d48}),white=new THREE.MeshStandardMaterial({color:0xf3eee0}),red=new THREE.MeshStandardMaterial({color:0xb52c2d}),blue=new THREE.MeshStandardMaterial({color:0x204b87}),skin=new THREE.MeshStandardMaterial({color:0xd9a178}),metal=new THREE.MeshStandardMaterial({color:0x454b55});
 function person(x,z,shirt){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);
 const body=new THREE.Mesh(new THREE.CapsuleGeometry(.42,.9,4,8),shirt);body.position.y=1.25;group.add(body);
 const head=new THREE.Mesh(new THREE.SphereGeometry(.29,12,10),skin);head.position.y=2.12;group.add(head);
@@ -57,15 +46,15 @@ const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
 const loadStatus=document.createElement('div');loadStatus.style.cssText='position:fixed;top:64px;left:12px;color:white;background:#071322aa;padding:5px 9px;border-radius:6px;font:12px system-ui';loadStatus.textContent='Loading imported stadium…';document.body.appendChild(loadStatus);
 new GLTFLoader().load(assetUrl,gltf=>{
  const stadium=gltf.scene;
- // This GLB is a 56m assembled baseball park. Never scale it to a 165m park.
+ // Imported scene only. Never generate a substitute field.
  const box=new THREE.Box3().setFromObject(stadium);
  const center=box.getCenter(new THREE.Vector3());
  stadium.position.set(-center.x,-box.min.y,-center.z-20);
  importedStadium.add(stadium);
- fallbackField.visible=false;
+ 
  loadStatus.textContent='IMPORTED BASEBALL PARK · 56m · FIELD VISIBLE';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
-},undefined,e=>{loadStatus.textContent='Stadium failed — fallback field active';reportError('Stadium GLB '+assetUrl,e)});
+},undefined,e=>{loadStatus.textContent='ERROR: IMPORTED STADIUM FAILED — NO FALLBACK';reportError('Stadium GLB '+assetUrl,e)});
 const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,8);
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Mesh(new THREE.PlaneGeometry(1.55,.39),new THREE.MeshBasicMaterial({map:vrTexture,transparent:true,depthTest:false}));vrBoard.position.set(0,-.32,-1.7);vrBoard.renderOrder=100;camera.add(vrBoard);
