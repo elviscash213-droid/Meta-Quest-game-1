@@ -33,13 +33,8 @@ const scene=new THREE.Scene();scene.background=new THREE.Color(0x8bbbe0);scene.f
 const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);camera.position.set(0,1.7,0);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));renderer.xr.enabled=true;renderer.shadowMap.enabled=false;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
 scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(-30,65,25);scene.add(sun);
-const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.83});
-const grass=new THREE.MeshStandardMaterial({color:0x326c38}),dirt=new THREE.MeshStandardMaterial({color:0x9b6d48}),white=new THREE.MeshStandardMaterial({color:0xf3eee0}),red=new THREE.MeshStandardMaterial({color:0xb52c2d}),blue=new THREE.MeshStandardMaterial({color:0x204b87}),skin=new THREE.MeshStandardMaterial({color:0xd9a178}),metal=new THREE.MeshStandardMaterial({color:0x454b55});
-function person(x,z,shirt){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);
-const body=new THREE.Mesh(new THREE.CapsuleGeometry(.42,.9,4,8),shirt);body.position.y=1.25;group.add(body);
-const head=new THREE.Mesh(new THREE.SphereGeometry(.29,12,10),skin);head.position.y=2.12;group.add(head);
-for(const s of [-1,1]){let arm=new THREE.Mesh(new THREE.CapsuleGeometry(.13,.72,3,6),skin);arm.position.set(s*.59,1.42,0);arm.rotation.z=s*.23;group.add(arm);let leg=new THREE.Mesh(new THREE.CapsuleGeometry(.16,.8,3,6),metal);leg.position.set(s*.22,.5,0);group.add(leg)}
-return {group,health:3,alive:true}}
+// Imported-only visuals: no generated character or environment meshes.
+function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);return {group,health:3,alive:true}}
 // Phase 1: authentic third-party CC0 stadium scene (not generated in this project).
 const importedStadium=new THREE.Group();scene.add(importedStadium);
 const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
@@ -52,12 +47,12 @@ new GLTFLoader().load(assetUrl,gltf=>{
  stadium.position.set(-center.x,-box.min.y,-center.z-20);
  importedStadium.add(stadium);
  
- loadStatus.textContent='IMPORTED BASEBALL PARK · 56m · FIELD VISIBLE';
+ loadStatus.textContent='IMPORTED STADIUM LOADED · NO GENERATED ASSETS';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
 },undefined,e=>{loadStatus.textContent='ERROR: IMPORTED STADIUM FAILED — NO FALLBACK';reportError('Stadium GLB '+assetUrl,e)});
 const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,8);
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
-const vrBoard=new THREE.Mesh(new THREE.PlaneGeometry(1.55,.39),new THREE.MeshBasicMaterial({map:vrTexture,transparent:true,depthTest:false}));vrBoard.position.set(0,-.32,-1.7);vrBoard.renderOrder=100;camera.add(vrBoard);
+const vrBoard=new THREE.Group();vrBoard.position.set(0,-.32,-1.7);camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
 function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=errors.length?errors[errors.length-1]:'SYSTEM OK · ASSETS: '+(loadStatus?.textContent||'pending');vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('GRIP HOLD BAT · SWING PHYSICALLY · A WEAPON/TAKE · B MODE · X RULES',25,218);vrTexture.needsUpdate=true}
 
@@ -95,46 +90,10 @@ function wound(p,force,point){
  if(p.injuries[limb]>=2){p.health=Math.max(0,p.health-1);p.group.rotation.z+=limb==='leftLeg'?-.12:limb==='rightLeg'?.12:0}
  return limb+' '+(p.injuries[limb]>=2?'FRACTURED':'INJURED');
 }
-function bloodBurst(point,dir,power){
- if(!bloodEnabled)return;
- const count=Math.min(34,Math.floor(12+power*2));
- for(let i=0;i<count;i++){
-  const radius=.018+Math.random()*.035;
-  const o=new THREE.Mesh(new THREE.SphereGeometry(radius,5,4),new THREE.MeshBasicMaterial({color:Math.random()>.45?0x940609:0x5c0508}));
-  o.position.copy(point);scene.add(o);
-  effects.push({obj:o,vel:dir.clone().multiplyScalar(.8+Math.random()*2).add(new THREE.Vector3((Math.random()-.5)*4,Math.random()*3,(Math.random()-.5)*4)),life:.45+Math.random()*.65,blood:true});
- }
-}
-function bloodStain(point){
- if(!bloodEnabled||bloodDecals.length>=80)return;
- const m=new THREE.Mesh(new THREE.CircleGeometry(.09+Math.random()*.16,10),new THREE.MeshBasicMaterial({color:0x650407,transparent:true,opacity:.72,depthWrite:false,side:THREE.DoubleSide}));
- m.rotation.x=-Math.PI/2;m.position.set(point.x,.023+Math.random()*.003,point.z);scene.add(m);bloodDecals.push(m);
-}
-function buildRagdoll(p,impulse){
- if(p.ragdoll)return;
- p.group.visible=false;p.ragdoll=true;
- const center=p.group.position.clone();bloodStain(center);
- const specs=[
- ['torso',0,1.25,0,.36,.48,.2,3],
- ['head',0,2.03,0,.25,.25,.25,1],
- ['left arm',-.57,1.32,0,.15,.42,.15,.7],
- ['right arm',.57,1.32,0,.15,.42,.15,.7],
- ['left leg',-.2,.48,0,.17,.47,.17,1.5],
- ['right leg',.2,.48,0,.17,.47,.17,1.5]];
- const bodies=[];
- for(const [name,x,y,z,sx,sy,sz,mass] of specs){
-  const b=new CANNON.Body({mass,shape:new CANNON.Box(new CANNON.Vec3(sx,sy,sz)),position:new CANNON.Vec3(center.x+x,y,center.z+z),linearDamping:.12,angularDamping:.2});
-  physics.addBody(b);
-  const visual=new THREE.Mesh(new THREE.BoxGeometry(sx*2,sy*2,sz*2),name==='torso'?red:name==='head'?skin:name.includes('arm')?skin:metal);
-  scene.add(visual);ragdolls.push({body:b,visual});bodies.push(b);
- }
- const joints=[[0,1,0,.43,0,0,-.25,0],[0,2,-.37,.23,0,0,.35,0],[0,3,.37,.23,0,0,.35,0],[0,4,-.2,-.57,0,0,.47,0],[0,5,.2,-.57,0,0,.47,0]];
- for(const [a,b,ax,ay,az,bx,by,bz] of joints){
-  const c=new CANNON.PointToPointConstraint(bodies[a],new CANNON.Vec3(ax,ay,az),bodies[b],new CANNON.Vec3(bx,by,bz),1e5);physics.addConstraint(c);
- }
- bodies[0].applyImpulse(new CANNON.Vec3(impulse.x,Math.max(2,impulse.y),impulse.z),bodies[0].position);
-}
-function hitEffect(pos){for(let i=0;i<8;i++){const obj=new THREE.Mesh(new THREE.SphereGeometry(.025,5,4),new THREE.MeshBasicMaterial({color:0xffb544}));obj.position.copy(pos);scene.add(obj);effects.push({obj,vel:new THREE.Vector3((Math.random()-.5)*3,Math.random()*2,(Math.random()-.5)*3),life:.35})}}
+function bloodBurst(){} // Await imported effect assets.
+function bloodStain(){} // Await imported decals.
+function buildRagdoll(p,impulse){if(p.ragdoll)return;p.ragdoll=true;p.group.visible=false;announce('RAGDOLL MODEL NOT IMPORTED')}
+function hitEffect(){} // Await imported impact effect.
 function combatHit(){if(ruleMode==='BASEBALL'){announce('COMBAT DISABLED IN BASEBALL MODE');return}
  const now=performance.now();if(now-lastCombat<280)return;lastCombat=now;
  const hand=controller1.getWorldPosition(new THREE.Vector3());const forward=new THREE.Vector3(0,0,-1).applyQuaternion(controller1.getWorldQuaternion(new THREE.Quaternion())).normalize();
@@ -171,15 +130,15 @@ new GLTFLoader().load(modelURL,gltf=>{
    p.group.children.forEach(child=>{if(child!==model)child.visible=false});
    p.group.updateMatrixWorld(true);
    const actorBox=new THREE.Box3().setFromObject(model);
-   if(actorBox.getSize(new THREE.Vector3()).y>3){reportError('Character scale','Imported character exceeds 3 metres; hiding oversized mesh');model.visible=false;p.group.children.forEach(child=>{if(child!==model)child.visible=true})}
+   if(actorBox.getSize(new THREE.Vector3()).y>3){reportError('Character scale','Imported character exceeds 3 metres; hiding oversized mesh');model.visible=false}
    p.model=model;p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
    p.actions={};for(const clip of clips)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
    p.currentAction=p.mixer.clipAction(idle);p.currentAction.play();
    p.clips={idle:idle.name,walk:walk?.name,run:run?.name};
   });
-  modelStatus.textContent=players.length+' imported rigged actors (temporary Soldier models) · '+available.join(', ');
+  modelStatus.textContent=players.length+' imported Soldier actors (NOT baseball players) · '+available.join(', ');
  }).catch(e=>reportError('Skeleton cloning',e));
-},undefined,e=>{modelStatus.textContent='Player model failed — placeholders active';reportError('Animated player GLB '+modelURL,e)});
+},undefined,e=>{modelStatus.textContent='PLAYER IMPORT FAILED — NO GENERATED FALLBACK';reportError('Animated player GLB '+modelURL,e)});
 function playCharacter(p,name){if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
 
 let ball=null,velocity=new THREE.Vector3(),state={inning:1,half:'BOTTOM',home:0,away:0,hr:0,kos:0,outs:0,balls:0,strikes:0,bases:[false,false,false],mode:'BAT',flying:false,contact:false,gameOver:false},lastPitch=0,lastSwing=0;
@@ -191,10 +150,11 @@ function strike(){state.strikes++;if(state.strikes>=3){announce('STRIKE THREE!')
 function takePitch(){if(!ball||!state.flying||state.contact)return;const inZone=Math.abs(ball.position.x)<.48;state.flying=false;scene.remove(ball);ball=null;if(inZone)strike();else{state.balls++;if(state.balls>=4)walk();else{announce('BALL '+state.balls);hud()}}}
 function finishGame(){state.gameOver=true;state.flying=false;announce('FINAL · HOME '+state.home+' / AWAY '+state.away+' · HR '+state.hr+' · KOs '+state.kos);document.getElementById('panel').querySelector('b').textContent='FINAL SCORE · HOME '+state.home+' : AWAY '+state.away+' · HOME RUNS '+state.hr+' · KOs '+state.kos}
 
-const ballGeo=new THREE.SphereGeometry(.075,12,10),ballMat=white;
+// No procedural baseball mesh. Ball physics are disabled until an imported ball is loaded.
+const ballGeo=null,ballMat=null;
 function announce(t){if(/HOME RUN|KNOCKDOWN|FRACTURED|CRACK|STRIKE THREE/.test(t))beep(340,.14);document.getElementById('msg').textContent=t;setTimeout(()=>{if(document.getElementById('msg').textContent===t)document.getElementById('msg').textContent=''},1500)}
 function hud(){document.getElementById('score').textContent='INNING '+state.inning+' / 9 · HOME '+state.home+' : AWAY '+state.away;document.getElementById('status').textContent='HR '+state.hr+' · KOs '+state.kos+' · HP '+playerHP+' · OUTS '+state.outs;document.getElementById('mode').textContent='MODE: '+state.mode;count()}
-function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);ball=new THREE.Mesh(ballGeo,ballMat);ball.position.set(0,1.8,-18);scene.add(ball);velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
+function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);announce('IMPORTED BASEBALL REQUIRED');return;velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
 function out(){state.outs++;state.flying=false;clearCount();if(state.outs>=3){state.outs=0;state.bases=[false,false,false];state.inning++;announce(state.inning>9?'FINAL SCORE':'NEXT INNING');if(state.inning>9)finishGame()}else announce('OUT '+state.outs);hud()}
 function swing(){if(state.gameOver)return;lastSwing=performance.now();if(state.mode==='BRAWL'){combatHit();return}
 if(!ball||!state.flying){announce('WAIT FOR PITCH');return}
@@ -207,7 +167,7 @@ const controller0=renderer.xr.getController(0),controller1=renderer.xr.getContro
 // Quest controls: left trigger pitches; right trigger attacks only in fist mode.
 controller0.addEventListener('selectstart',pitch);
 controller1.addEventListener('selectstart',()=>{if(state.mode==='BRAWL'&&weaponKind==='FISTS')swing()});
-const weapon=new THREE.Group();const handle=new THREE.Mesh(new THREE.CylinderGeometry(.045,.05,.8,12),mat(0x744525));handle.position.y=-.05;weapon.add(handle);const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.09,.055,.8,12),mat(0xa4a8ad));barrel.position.y=.73;weapon.add(barrel);weapon.rotation.x=Math.PI/2;controller1.add(weapon);weapon.visible=false;
+const weapon=new THREE.Group();controller1.add(weapon);weapon.visible=false; // No generated bat.
 renderer.xr.addEventListener('sessionstart',()=>{document.body.classList.add('in-vr');modelStatus.textContent='VR session started';loadStatus.style.display='none';modelStatus.style.display='none'});
 renderer.xr.addEventListener('sessionend',()=>{document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now(),buttonHeld=false;const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
 renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;
@@ -221,7 +181,7 @@ const session=renderer.xr.getSession();if(session){
   const b=right.gamepad.buttons;
   const grip=!!b[1]?.pressed;
   edge('rightGrip',grip,()=>{batHeld=true;announce('WEAPON GRIPPED')});
-  if(!grip&&batHeld){batHeld=false;prevBatTip=null;announce('WEAPON RELEASED')}weapon.visible=grip&&weaponKind==='BAT';
+  if(!grip&&batHeld){batHeld=false;prevBatTip=null;announce('WEAPON RELEASED')}weapon.visible=false;
   edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BRAWL')switchWeapon();else takePitch()});
   edge('rightB',!!b[5]?.pressed,()=>{toggle()});
   if(batHeld&&weaponKind==='BAT'){
