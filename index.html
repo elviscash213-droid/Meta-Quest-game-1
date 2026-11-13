@@ -57,29 +57,23 @@ const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
 const loadStatus=document.createElement('div');loadStatus.style.cssText='position:fixed;top:64px;left:12px;color:white;background:#071322aa;padding:5px 9px;border-radius:6px;font:12px system-ui';loadStatus.textContent='Loading imported stadium…';document.body.appendChild(loadStatus);
 new GLTFLoader().load(assetUrl,gltf=>{
  const stadium=gltf.scene;
- const bounds=new THREE.Box3().setFromObject(stadium),size=new THREE.Vector3(),center=new THREE.Vector3();bounds.getSize(size);bounds.getCenter(center);
- // Center on the imported park; preserve its real-world metre scale.
- // Normalize third-party park dimensions to the same approximate 165m outfield as gameplay.
- const horizontal=Math.max(size.x,size.z);const scale=horizontal>1?Math.min(1.5,165/horizontal):1;
- stadium.scale.setScalar(scale);
- stadium.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale-95);
- // Imported park is scenery until its actual plate/base coordinates can be calibrated.
-
+ // This GLB is a 56m assembled baseball park. Never scale it to a 165m park.
+ const box=new THREE.Box3().setFromObject(stadium);
+ const center=box.getCenter(new THREE.Vector3());
+ stadium.position.set(-center.x,-box.min.y,-center.z-20);
  importedStadium.add(stadium);
- // Keep gameplay unobstructed: the third-party stadium stays distant until accurately mapped to home plate.
- stadium.visible=true;loadStatus.textContent='IMPORTED STADIUM · POSITIONED BEHIND FIELD';
- fallbackField.visible=true; // Retain functional diamond and foul lines for calibration
- loadStatus.textContent='FIELD ACTIVE · STADIUM ALIGNMENT PENDING';
+ fallbackField.visible=false;
+ loadStatus.textContent='IMPORTED BASEBALL PARK · 56m · FIELD VISIBLE';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
 },undefined,e=>{loadStatus.textContent='Stadium failed — fallback field active';reportError('Stadium GLB '+assetUrl,e)});
-const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,5);
+const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,8);
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Mesh(new THREE.PlaneGeometry(1.55,.39),new THREE.MeshBasicMaterial({map:vrTexture,transparent:true,depthTest:false}));vrBoard.position.set(0,-.32,-1.7);vrBoard.renderOrder=100;camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
 function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=errors.length?errors[errors.length-1]:'SYSTEM OK · ASSETS: '+(loadStatus?.textContent||'pending');vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('GRIP HOLD BAT · SWING PHYSICALLY · A WEAPON/TAKE · B MODE · X RULES',25,218);vrTexture.needsUpdate=true}
 
 
-const playerPositions=[[0,-19],[-13,-14],[13,-14],[0,-28],[0,-40],[20,-38],[-20,-38],[32,-56],[-32,-56]];
+const playerPositions=[[0,-8],[-10,-5],[10,-5],[0,-15],[0,-24],[14,-17],[-14,-17],[19,-27],[-19,-27]];
 const players=playerPositions.map(([x,z],i)=>person(x,z,i===0?red:blue));
 let aiOn=true,ruleMode='CHAOS',lastAI=0,playerHP=100,enemyHits=0;
 const initialPositions=playerPositions.map(([x,z])=>new THREE.Vector3(x,0,z));
@@ -176,35 +170,25 @@ new GLTFLoader().load(modelURL,gltf=>{
  import('three/addons/utils/SkeletonUtils.js').then(({clone})=>{
   players.forEach((p,i)=>{
    const model=clone(gltf.scene);
-   const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());
-   const scale=1.85/Math.max(size.y,.001);
+   // Single normalization only: the previous build scaled the rig twice and produced giants.
+   const sourceBox=new THREE.Box3().setFromObject(model);
+   const height=sourceBox.getSize(new THREE.Vector3()).y;
+   if(!Number.isFinite(height)||height<.01)throw Error('Invalid character model dimensions');
+   const scale=THREE.MathUtils.clamp(1.78/height,.001,100);
    model.scale.setScalar(scale);
-   model.position.y=-bounds.min.y*scale;
-   // The model may have nested transforms; enforce final world-space player height.
-   model.updateMatrixWorld(true);const finalHeight=new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).y;
-   if(finalHeight>0.01&&Math.abs(finalHeight-1.85)>.12){const factor=1.85/finalHeight;model.scale.multiplyScalar(factor);model.position.y*=factor}
+   model.position.set(-sourceBox.getCenter(new THREE.Vector3()).x*scale,-sourceBox.min.y*scale,-sourceBox.getCenter(new THREE.Vector3()).z*scale);
    model.rotation.y=Math.PI;
-   model.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.frustumCulled=false}});
-   // Normalize the actual skinned geometry in LOCAL coordinates, before attaching to positioned actors.
-   const wrapper=new THREE.Group();wrapper.add(model);
-   wrapper.updateMatrixWorld(true);
-   const measured=new THREE.Box3().setFromObject(wrapper);
-   const measuredSize=measured.getSize(new THREE.Vector3());
-   if(measuredSize.y>0.001){wrapper.scale.setScalar(1.85/measuredSize.y)}
-   wrapper.updateMatrixWorld(true);
-   const corrected=new THREE.Box3().setFromObject(wrapper);
-   const c=corrected.getCenter(new THREE.Vector3());
-   model.position.x-=c.x/Math.max(wrapper.scale.x,.001);
-   model.position.z-=c.z/Math.max(wrapper.scale.z,.001);
-   model.position.y-=corrected.min.y/Math.max(wrapper.scale.y,.001);
-   p.group.add(wrapper);
-   p.group.children.forEach(child=>{if(child!==wrapper)child.visible=false});
+   p.group.add(model);
+   p.group.children.forEach(child=>{if(child!==model)child.visible=false});
+   p.group.updateMatrixWorld(true);
+   const actorBox=new THREE.Box3().setFromObject(model);
+   if(actorBox.getSize(new THREE.Vector3()).y>3){reportError('Character scale','Imported character exceeds 3 metres; hiding oversized mesh');model.visible=false;p.group.children.forEach(child=>{if(child!==model)child.visible=true})}
    p.model=model;p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
    p.actions={};for(const clip of clips)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
    p.currentAction=p.mixer.clipAction(idle);p.currentAction.play();
    p.clips={idle:idle.name,walk:walk?.name,run:run?.name};
   });
-  modelStatus.textContent=players.length+' imported rigged players · '+available.join(', ');
+  modelStatus.textContent=players.length+' imported rigged actors (temporary Soldier models) · '+available.join(', ');
  }).catch(e=>reportError('Skeleton cloning',e));
 },undefined,e=>{modelStatus.textContent='Player model failed — placeholders active';reportError('Animated player GLB '+modelURL,e)});
 function playCharacter(p,name){if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
@@ -218,7 +202,7 @@ function strike(){state.strikes++;if(state.strikes>=3){announce('STRIKE THREE!')
 function takePitch(){if(!ball||!state.flying||state.contact)return;const inZone=Math.abs(ball.position.x)<.48;state.flying=false;scene.remove(ball);ball=null;if(inZone)strike();else{state.balls++;if(state.balls>=4)walk();else{announce('BALL '+state.balls);hud()}}}
 function finishGame(){state.gameOver=true;state.flying=false;announce('FINAL · HOME '+state.home+' / AWAY '+state.away+' · HR '+state.hr+' · KOs '+state.kos);document.getElementById('panel').querySelector('b').textContent='FINAL SCORE · HOME '+state.home+' : AWAY '+state.away+' · HOME RUNS '+state.hr+' · KOs '+state.kos}
 
-const ballGeo=new THREE.SphereGeometry(.115,12,10),ballMat=white;
+const ballGeo=new THREE.SphereGeometry(.075,12,10),ballMat=white;
 function announce(t){if(/HOME RUN|KNOCKDOWN|FRACTURED|CRACK|STRIKE THREE/.test(t))beep(340,.14);document.getElementById('msg').textContent=t;setTimeout(()=>{if(document.getElementById('msg').textContent===t)document.getElementById('msg').textContent=''},1500)}
 function hud(){document.getElementById('score').textContent='INNING '+state.inning+' / 9 · HOME '+state.home+' : AWAY '+state.away;document.getElementById('status').textContent='HR '+state.hr+' · KOs '+state.kos+' · HP '+playerHP+' · OUTS '+state.outs;document.getElementById('mode').textContent='MODE: '+state.mode;count()}
 function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);ball=new THREE.Mesh(ballGeo,ballMat);ball.position.set(0,1.8,-18);scene.add(ball);velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
