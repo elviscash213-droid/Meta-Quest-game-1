@@ -67,7 +67,7 @@ new GLTFLoader().load(assetUrl,gltf=>{
 
  importedStadium.add(stadium);
  // Keep gameplay unobstructed: the third-party stadium stays distant until accurately mapped to home plate.
- stadium.visible=false;loadStatus.textContent='FIELD ACTIVE · STADIUM ALIGNMENT PENDING';
+ stadium.visible=true;loadStatus.textContent='IMPORTED STADIUM · POSITIONED BEHIND FIELD';
  fallbackField.visible=true; // Retain functional diamond and foul lines for calibration
  loadStatus.textContent='FIELD ACTIVE · STADIUM ALIGNMENT PENDING';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
@@ -79,7 +79,7 @@ let lastVRMessage='READY',lastVRUpdate=0;
 function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=errors.length?errors[errors.length-1]:'SYSTEM OK · ASSETS: '+(loadStatus?.textContent||'pending');vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('GRIP HOLD BAT · SWING PHYSICALLY · A WEAPON/TAKE · B MODE · X RULES',25,218);vrTexture.needsUpdate=true}
 
 
-const playerPositions=[[0,-19],[-13,-14],[13,-14],[0,-28],[0,-40]];
+const playerPositions=[[0,-19],[-13,-14],[13,-14],[0,-28],[0,-40],[20,-38],[-20,-38],[32,-56],[-32,-56]];
 const players=playerPositions.map(([x,z],i)=>person(x,z,i===0?red:blue));
 let aiOn=true,ruleMode='CHAOS',lastAI=0,playerHP=100,enemyHits=0;
 const initialPositions=playerPositions.map(([x,z])=>new THREE.Vector3(x,0,z));
@@ -185,18 +185,26 @@ new GLTFLoader().load(modelURL,gltf=>{
    if(finalHeight>0.01&&Math.abs(finalHeight-1.85)>.12){const factor=1.85/finalHeight;model.scale.multiplyScalar(factor);model.position.y*=factor}
    model.rotation.y=Math.PI;
    model.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.frustumCulled=false}});
-   p.group.add(model);
-   // Imported models can have extreme embedded offsets; center their actual geometry over the actor origin.
-   model.updateMatrixWorld(true);const worldBox=new THREE.Box3().setFromObject(model);const worldCenter=worldBox.getCenter(new THREE.Vector3());
-   model.position.x-=worldCenter.x-p.group.position.x;model.position.z-=worldCenter.z-p.group.position.z;
-   model.updateMatrixWorld(true);const aligned=new THREE.Box3().setFromObject(model);model.position.y-=aligned.min.y;
-   p.group.children.forEach(child=>{if(child!==model)child.visible=false});
+   // Normalize the actual skinned geometry in LOCAL coordinates, before attaching to positioned actors.
+   const wrapper=new THREE.Group();wrapper.add(model);
+   wrapper.updateMatrixWorld(true);
+   const measured=new THREE.Box3().setFromObject(wrapper);
+   const measuredSize=measured.getSize(new THREE.Vector3());
+   if(measuredSize.y>0.001){wrapper.scale.setScalar(1.85/measuredSize.y)}
+   wrapper.updateMatrixWorld(true);
+   const corrected=new THREE.Box3().setFromObject(wrapper);
+   const c=corrected.getCenter(new THREE.Vector3());
+   model.position.x-=c.x/Math.max(wrapper.scale.x,.001);
+   model.position.z-=c.z/Math.max(wrapper.scale.z,.001);
+   model.position.y-=corrected.min.y/Math.max(wrapper.scale.y,.001);
+   p.group.add(wrapper);
+   p.group.children.forEach(child=>{if(child!==wrapper)child.visible=false});
    p.model=model;p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
    p.actions={};for(const clip of clips)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
    p.currentAction=p.mixer.clipAction(idle);p.currentAction.play();
    p.clips={idle:idle.name,walk:walk?.name,run:run?.name};
   });
-  modelStatus.textContent='5 imported rigged players · '+available.join(', ');
+  modelStatus.textContent=players.length+' imported rigged players · '+available.join(', ');
  }).catch(e=>reportError('Skeleton cloning',e));
 },undefined,e=>{modelStatus.textContent='Player model failed — placeholders active';reportError('Animated player GLB '+modelURL,e)});
 function playCharacter(p,name){if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
