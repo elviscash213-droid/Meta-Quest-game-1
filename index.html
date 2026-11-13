@@ -1,9 +1,22 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>NO RULES BASEBALL VR — PHASE 2</title>
-<style>body{margin:0;background:#080f19;color:#fff;font:16px system-ui;overflow:hidden}#hud{position:fixed;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;text-shadow:1px 2px 3px #000}#panel{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#091321dd;border:1px solid #7592aa;border-radius:12px;padding:12px;text-align:center;max-width:95vw}button{background:#c53b27;color:white;border:0;border-radius:7px;padding:10px;margin:3px;font-weight:bold}small{color:#b9c8d9}#msg{position:fixed;top:22%;width:100%;text-align:center;font-weight:900;font-size:28px;text-shadow:2px 3px #000;pointer-events:none}canvas{display:block}</style></head>
+<title>NO RULES BASEBALL VR — QUEST BUILD</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080f19;color:#fff;font:14px system-ui;overflow:hidden}canvas{display:block}
+#hud{position:fixed;top:env(safe-area-inset-top,8px);left:8px;right:8px;display:grid;grid-template-columns:1fr auto;gap:4px 10px;pointer-events:none;text-shadow:1px 2px 3px #000;z-index:4;font-size:clamp(10px,2.5vw,15px)}
+#hud b{background:#071321aa;padding:5px 8px;border-radius:6px}#count{grid-column:1}#status{grid-column:2;grid-row:1/3;align-self:start}
+#panel{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);background:#091321e8;border:1px solid #7592aa;border-radius:12px;padding:9px;text-align:center;width:min(680px,calc(100vw - 20px));z-index:4;max-height:42vh;overflow:auto}
+#panel b{font-size:12px;letter-spacing:.05em}#panel>div{display:flex;flex-wrap:wrap;justify-content:center;gap:3px;margin-top:6px}
+button{background:#c53b27;color:white;border:0;border-radius:7px;padding:9px 11px;margin:0;font-weight:700;font-size:12px;touch-action:manipulation}small{display:block;color:#b9c8d9;font-size:11px;margin-top:5px}
+#msg{position:fixed;top:19%;width:100%;text-align:center;font-weight:900;font-size:23px;text-shadow:2px 3px #000;pointer-events:none;z-index:5}
+#VRButton{bottom:calc(42vh + 16px)!important;left:50%!important;z-index:12!important;opacity:1!important}
+#showDiagnostics{bottom:calc(42vh + 18px)!important;right:8px!important;font-size:11px!important}
+#diagnostics{bottom:calc(42vh + 58px)!important}
+@media(min-width:700px){#panel{max-height:24vh}#VRButton{bottom:calc(24vh + 16px)!important}#showDiagnostics{bottom:calc(24vh + 18px)!important}#diagnostics{bottom:calc(24vh + 58px)!important}}
+body.in-vr #panel,body.in-vr #hud,body.in-vr #msg,body.in-vr #showDiagnostics,body.in-vr #diagnostics{display:none!important}
+</style></head>
 <body><div id="hud"><b id="score">INNING 1 / 9 · HOME 0 : AWAY 0</b><b id="count">TOP · 0-0 · BASES ○○○</b><b id="status">HR 0 · KOs 0 · OUTS 0</b></div><div id="msg"></div><div id="diagnostics" style="position:fixed;right:10px;bottom:130px;width:min(380px,90vw);max-height:32vh;overflow:auto;background:#190d11ed;color:#fff;border:1px solid #e27777;border-radius:9px;padding:9px;font:12px monospace;display:none;z-index:10"><b>GAME DIAGNOSTICS</b><button id="closeDiagnostics" style="float:right;padding:2px 7px">X</button><div id="errorLines"></div></div><button id="showDiagnostics" style="position:fixed;right:10px;bottom:85px;z-index:9;background:#233e57">ERROR LOG <span id="errorCount">0</span></button>
-<div id="panel"><b>NO RULES BASEBALL — PHASE 6 · AI & GAME MODES</b><div><button id="pitch">PITCH</button><button id="take">TAKE PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="weaponSwitch">WEAPON: BAT</button><button id="goreToggle">BLOOD: ON</button><button id="aiToggle">AI: ON</button><button id="gameMode">RULES: CHAOS</button><button id="soundToggle">SOUND: ON</button><button id="reset">RESET</button></div><small>Quest: Enter VR, left stick moves, right trigger swings, left trigger pitches. Imported stadium loads online. Desktop buttons also work.</small></div>
+<div id="panel"><b>NO RULES BASEBALL — PHASE 6 · AI & GAME MODES</b><div><button id="pitch">PITCH</button><button id="take">TAKE PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="weaponSwitch">WEAPON: BAT</button><button id="goreToggle">BLOOD: ON</button><button id="aiToggle">AI: ON</button><button id="gameMode">RULES: CHAOS</button><button id="soundToggle">SOUND: ON</button><button id="reset">RESET</button></div><small>QUEST: left stick moves · right trigger swings/attacks · left trigger pitches. Flat-screen controls are for debugging only.</small></div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
@@ -17,7 +30,7 @@ let audioContext=null,soundOn=true;
 function beep(freq=220,duration=.08,type='triangle'){if(!soundOn)return;try{audioContext??=new (window.AudioContext||window.webkitAudioContext)();if(audioContext.state==='suspended')audioContext.resume();const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type=type;osc.frequency.value=freq;gain.gain.setValueAtTime(.055,audioContext.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+duration);osc.connect(gain).connect(audioContext.destination);osc.start();osc.stop(audioContext.currentTime+duration)}catch(e){reportError('Audio',e)}}
 document.getElementById('soundToggle').onclick=()=>{soundOn=!soundOn;document.getElementById('soundToggle').textContent='SOUND: '+(soundOn?'ON':'OFF')};
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x8bbbe0);scene.fog=new THREE.Fog(0x8bbbe0,95,260);
-const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);camera.position.set(0,1.7,5);
+const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);camera.position.set(0,1.7,7);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));renderer.xr.enabled=true;renderer.shadowMap.enabled=false;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
 scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(-30,65,25);scene.add(sun);
 const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.83});
@@ -46,13 +59,18 @@ new GLTFLoader().load(assetUrl,gltf=>{
  const stadium=gltf.scene;
  const bounds=new THREE.Box3().setFromObject(stadium),size=new THREE.Vector3(),center=new THREE.Vector3();bounds.getSize(size);bounds.getCenter(center);
  // Center on the imported park; preserve its real-world metre scale.
- stadium.position.set(-center.x,-bounds.min.y,-center.z);
+ // Normalize third-party park dimensions to the same approximate 165m outfield as gameplay.
+ const horizontal=Math.max(size.x,size.z);const scale=horizontal>1?Math.min(1.5,165/horizontal):1;
+ stadium.scale.setScalar(scale);
+ stadium.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale-38);
+ // Imported park is scenery until its actual plate/base coordinates can be calibrated.
+
  importedStadium.add(stadium);
- fallbackField.visible=false;
+ fallbackField.visible=true; // Retain functional diamond and foul lines for calibration
  loadStatus.textContent='IMPORTED CC0 STADIUM LOADED';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
 },undefined,e=>{loadStatus.textContent='Stadium failed — fallback field active';reportError('Stadium GLB '+assetUrl,e)});
-const rig=new THREE.Group();scene.add(rig);rig.add(camera);
+const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,0);
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Mesh(new THREE.PlaneGeometry(1.55,.39),new THREE.MeshBasicMaterial({map:vrTexture,transparent:true,depthTest:false}));vrBoard.position.set(0,-.32,-1.7);vrBoard.renderOrder=100;camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
@@ -157,9 +175,12 @@ new GLTFLoader().load(modelURL,gltf=>{
   players.forEach((p,i)=>{
    const model=clone(gltf.scene);
    const bounds=new THREE.Box3().setFromObject(model),size=bounds.getSize(new THREE.Vector3());
-   const scale=2.05/Math.max(size.y,.001);
+   const scale=1.85/Math.max(size.y,.001);
    model.scale.setScalar(scale);
    model.position.y=-bounds.min.y*scale;
+   // The model may have nested transforms; enforce final world-space player height.
+   model.updateMatrixWorld(true);const finalHeight=new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).y;
+   if(finalHeight>0.01&&Math.abs(finalHeight-1.85)>.12){const factor=1.85/finalHeight;model.scale.multiplyScalar(factor);model.position.y*=factor}
    model.rotation.y=Math.PI;
    p.group.add(model);
    p.group.children.forEach(child=>{if(child!==model)child.visible=false});
@@ -197,7 +218,8 @@ document.getElementById('pitch').onclick=pitch;document.getElementById('take').o
 const controller0=renderer.xr.getController(0),controller1=renderer.xr.getController(1);rig.add(controller0,controller1);
 controller0.addEventListener('selectstart',pitch);controller1.addEventListener('selectstart',swing);
 const weapon=new THREE.Group();const handle=new THREE.Mesh(new THREE.CylinderGeometry(.045,.05,.8,12),mat(0x744525));handle.position.y=-.05;weapon.add(handle);const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.09,.055,.8,12),mat(0xa4a8ad));barrel.position.y=.73;weapon.add(barrel);weapon.rotation.x=Math.PI/2;controller1.add(weapon);
-renderer.xr.addEventListener('sessionstart',()=>{modelStatus.textContent+=' · VR session started'});renderer.xr.addEventListener('sessionend',()=>{modelStatus.textContent+=' · VR session ended'});const clock=new THREE.Clock();let prev=performance.now(),buttonHeld=false;
+renderer.xr.addEventListener('sessionstart',()=>{document.body.classList.add('in-vr');modelStatus.textContent='VR session started';loadStatus.style.display='none';modelStatus.style.display='none'});
+renderer.xr.addEventListener('sessionend',()=>{document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now(),buttonHeld=false;
 renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;
 if(state.flying&&ball){ball.position.addScaledVector(velocity,dt);velocity.y-=9.81*dt;if(ball.position.z>4&&velocity.z>0){takePitch()}
 else if(ball.position.y<.12){if(state.contact&&velocity.z<0&&ball.position.z<-75){state.hr++;advance(4)}else if(state.contact&&velocity.z<0){const distance=-ball.position.z;advance(distance>55?3:distance>32?2:1)}else if(!state.contact){takePitch()}else out();state.flying=false;if(ball){scene.remove(ball);ball=null}}}
