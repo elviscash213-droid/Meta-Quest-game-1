@@ -30,7 +30,7 @@ let audioContext=null,soundOn=true;
 function beep(freq=220,duration=.08,type='triangle'){if(!soundOn)return;try{audioContext??=new (window.AudioContext||window.webkitAudioContext)();if(audioContext.state==='suspended')audioContext.resume();const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.type=type;osc.frequency.value=freq;gain.gain.setValueAtTime(.055,audioContext.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+duration);osc.connect(gain).connect(audioContext.destination);osc.start();osc.stop(audioContext.currentTime+duration)}catch(e){reportError('Audio',e)}}
 document.getElementById('soundToggle').onclick=()=>{soundOn=!soundOn;document.getElementById('soundToggle').textContent='SOUND: '+(soundOn?'ON':'OFF')};
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x8bbbe0);scene.fog=new THREE.Fog(0x8bbbe0,95,260);
-const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);camera.position.set(0,1.7,7);
+const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);camera.position.set(0,1.7,0);
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));renderer.xr.enabled=true;renderer.shadowMap.enabled=false;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
 scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(-30,65,25);scene.add(sun);
 const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.83});
@@ -62,15 +62,17 @@ new GLTFLoader().load(assetUrl,gltf=>{
  // Normalize third-party park dimensions to the same approximate 165m outfield as gameplay.
  const horizontal=Math.max(size.x,size.z);const scale=horizontal>1?Math.min(1.5,165/horizontal):1;
  stadium.scale.setScalar(scale);
- stadium.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale-38);
+ stadium.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale-95);
  // Imported park is scenery until its actual plate/base coordinates can be calibrated.
 
  importedStadium.add(stadium);
+ // Keep gameplay unobstructed: the third-party stadium stays distant until accurately mapped to home plate.
+ stadium.visible=false;loadStatus.textContent='FIELD ACTIVE · STADIUM ALIGNMENT PENDING';
  fallbackField.visible=true; // Retain functional diamond and foul lines for calibration
- loadStatus.textContent='IMPORTED CC0 STADIUM LOADED';
+ loadStatus.textContent='FIELD ACTIVE · STADIUM ALIGNMENT PENDING';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
 },undefined,e=>{loadStatus.textContent='Stadium failed — fallback field active';reportError('Stadium GLB '+assetUrl,e)});
-const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,0);
+const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,5);
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Mesh(new THREE.PlaneGeometry(1.55,.39),new THREE.MeshBasicMaterial({map:vrTexture,transparent:true,depthTest:false}));vrBoard.position.set(0,-.32,-1.7);vrBoard.renderOrder=100;camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
@@ -182,7 +184,12 @@ new GLTFLoader().load(modelURL,gltf=>{
    model.updateMatrixWorld(true);const finalHeight=new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).y;
    if(finalHeight>0.01&&Math.abs(finalHeight-1.85)>.12){const factor=1.85/finalHeight;model.scale.multiplyScalar(factor);model.position.y*=factor}
    model.rotation.y=Math.PI;
+   model.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.frustumCulled=false}});
    p.group.add(model);
+   // Imported models can have extreme embedded offsets; center their actual geometry over the actor origin.
+   model.updateMatrixWorld(true);const worldBox=new THREE.Box3().setFromObject(model);const worldCenter=worldBox.getCenter(new THREE.Vector3());
+   model.position.x-=worldCenter.x-p.group.position.x;model.position.z-=worldCenter.z-p.group.position.z;
+   model.updateMatrixWorld(true);const aligned=new THREE.Box3().setFromObject(model);model.position.y-=aligned.min.y;
    p.group.children.forEach(child=>{if(child!==model)child.visible=false});
    p.model=model;p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
    p.actions={};for(const clip of clips)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
