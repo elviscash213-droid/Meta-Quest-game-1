@@ -3,10 +3,11 @@
 <title>NO RULES BASEBALL VR — PHASE 2</title>
 <style>body{margin:0;background:#080f19;color:#fff;font:16px system-ui;overflow:hidden}#hud{position:fixed;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;text-shadow:1px 2px 3px #000}#panel{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#091321dd;border:1px solid #7592aa;border-radius:12px;padding:12px;text-align:center;max-width:95vw}button{background:#c53b27;color:white;border:0;border-radius:7px;padding:10px;margin:3px;font-weight:bold}small{color:#b9c8d9}#msg{position:fixed;top:22%;width:100%;text-align:center;font-weight:900;font-size:28px;text-shadow:2px 3px #000;pointer-events:none}canvas{display:block}</style></head>
 <body><div id="hud"><b id="score">INNING 1 / 9 · HOME 0 : AWAY 0</b><b id="count">TOP · 0-0 · BASES ○○○</b><b id="status">HR 0 · KOs 0 · OUTS 0</b></div><div id="msg"></div><div id="diagnostics" style="position:fixed;right:10px;bottom:130px;width:min(380px,90vw);max-height:32vh;overflow:auto;background:#190d11ed;color:#fff;border:1px solid #e27777;border-radius:9px;padding:9px;font:12px monospace;display:none;z-index:10"><b>GAME DIAGNOSTICS</b><button id="closeDiagnostics" style="float:right;padding:2px 7px">X</button><div id="errorLines"></div></div><button id="showDiagnostics" style="position:fixed;right:10px;bottom:85px;z-index:9;background:#233e57">ERROR LOG <span id="errorCount">0</span></button>
-<div id="panel"><b>NO RULES BASEBALL — PHASE 3 · BASEBALL RULES</b><div><button id="pitch">PITCH</button><button id="take">TAKE PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="reset">RESET</button></div><small>Quest: Enter VR, left stick moves, right trigger swings, left trigger pitches. Imported stadium loads online. Desktop buttons also work.</small></div>
+<div id="panel"><b>NO RULES BASEBALL — PHASE 4 · PHYSICS COMBAT</b><div><button id="pitch">PITCH</button><button id="take">TAKE PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="weaponSwitch">WEAPON: BAT</button><button id="reset">RESET</button></div><small>Quest: Enter VR, left stick moves, right trigger swings, left trigger pitches. Imported stadium loads online. Desktop buttons also work.</small></div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
+import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 import {VRButton} from 'three/addons/webxr/VRButton.js';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 const errors=[];const diag=document.getElementById('diagnostics');document.getElementById('closeDiagnostics').onclick=()=>diag.style.display='none';document.getElementById('showDiagnostics').onclick=()=>diag.style.display='block';
@@ -52,6 +53,49 @@ const rig=new THREE.Group();scene.add(rig);rig.add(camera);
 
 const playerPositions=[[0,-19],[-13,-14],[13,-14],[0,-28],[0,-40]];
 const players=playerPositions.map(([x,z],i)=>person(x,z,i===0?red:blue));
+const physics=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
+physics.defaultContactMaterial.friction=.7;
+const groundBody=new CANNON.Body({mass:0,shape:new CANNON.Plane()});groundBody.quaternion.setFromEuler(-Math.PI/2,0,0);physics.addBody(groundBody);
+const ragdolls=[];const effects=[];let weaponKind='BAT';let lastCombat=0;const impactPoint=new THREE.Vector3(),impactDir=new THREE.Vector3();
+function buildRagdoll(p,impulse){
+ if(p.ragdoll)return;
+ p.group.visible=false;p.ragdoll=true;
+ const center=p.group.position.clone();
+ const specs=[
+ ['torso',0,1.25,0,.36,.48,.2,3],
+ ['head',0,2.03,0,.25,.25,.25,1],
+ ['left arm',-.57,1.32,0,.15,.42,.15,.7],
+ ['right arm',.57,1.32,0,.15,.42,.15,.7],
+ ['left leg',-.2,.48,0,.17,.47,.17,1.5],
+ ['right leg',.2,.48,0,.17,.47,.17,1.5]];
+ const bodies=[];
+ for(const [name,x,y,z,sx,sy,sz,mass] of specs){
+  const b=new CANNON.Body({mass,shape:new CANNON.Box(new CANNON.Vec3(sx,sy,sz)),position:new CANNON.Vec3(center.x+x,y,center.z+z),linearDamping:.12,angularDamping:.2});
+  physics.addBody(b);
+  const visual=new THREE.Mesh(new THREE.BoxGeometry(sx*2,sy*2,sz*2),name==='torso'?red:name==='head'?skin:name.includes('arm')?skin:metal);
+  scene.add(visual);ragdolls.push({body:b,visual});bodies.push(b);
+ }
+ const joints=[[0,1,0,.43,0,0,-.25,0],[0,2,-.37,.23,0,0,.35,0],[0,3,.37,.23,0,0,.35,0],[0,4,-.2,-.57,0,0,.47,0],[0,5,.2,-.57,0,0,.47,0]];
+ for(const [a,b,ax,ay,az,bx,by,bz] of joints){
+  const c=new CANNON.PointToPointConstraint(bodies[a],new CANNON.Vec3(ax,ay,az),bodies[b],new CANNON.Vec3(bx,by,bz),1e5);physics.addConstraint(c);
+ }
+ bodies[0].applyImpulse(new CANNON.Vec3(impulse.x,Math.max(2,impulse.y),impulse.z),bodies[0].position);
+}
+function hitEffect(pos){for(let i=0;i<8;i++){const obj=new THREE.Mesh(new THREE.SphereGeometry(.025,5,4),new THREE.MeshBasicMaterial({color:0xffb544}));obj.position.copy(pos);scene.add(obj);effects.push({obj,vel:new THREE.Vector3((Math.random()-.5)*3,Math.random()*2,(Math.random()-.5)*3),life:.35})}}
+function combatHit(){
+ const now=performance.now();if(now-lastCombat<280)return;lastCombat=now;
+ const hand=controller1.getWorldPosition(new THREE.Vector3());const forward=new THREE.Vector3(0,0,-1).applyQuaternion(controller1.getWorldQuaternion(new THREE.Quaternion())).normalize();
+ const origin=renderer.xr.isPresenting?hand:camera.getWorldPosition(new THREE.Vector3());
+ const dir=renderer.xr.isPresenting?forward:new THREE.Vector3(0,-.1,-1).applyQuaternion(camera.getWorldQuaternion(new THREE.Quaternion())).normalize();
+ let best=null,bestDist=Infinity;
+ for(const p of players){if(!p.alive)continue;const target=p.group.position.clone().add(new THREE.Vector3(0,1.2,0));const diff=target.sub(origin);const along=diff.dot(dir);const lateral=diff.clone().addScaledVector(dir,-along).length();if(along>0&&along<(weaponKind==='BAT'?2.6:1.45)&&lateral<.95&&along<bestDist){best=p;bestDist=along}}
+ if(!best){announce('MISS');return}
+ const force=weaponKind==='BAT'?8:4;best.health-=weaponKind==='BAT'?2:1;
+ const pos=best.group.position.clone().add(new THREE.Vector3(0,1.4,0));hitEffect(pos);
+ if(best.health<=0){best.alive=false;state.kos++;buildRagdoll(best,dir.clone().multiplyScalar(force).add(new THREE.Vector3(0,3,0)));announce('KNOCKDOWN!');hud()}
+ else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce('SOLID HIT')}
+}
+
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='Loading imported animated players…';document.body.appendChild(modelStatus);
 const mixers=[];const modelURL='https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb';
 new GLTFLoader().load(modelURL,gltf=>{
@@ -96,9 +140,11 @@ function announce(t){document.getElementById('msg').textContent=t;setTimeout(()=
 function hud(){document.getElementById('score').textContent='INNING '+state.inning+' / 9 · HOME '+state.home+' : AWAY '+state.away;document.getElementById('status').textContent='HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs;document.getElementById('mode').textContent='MODE: '+state.mode;count()}
 function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);ball=mesh(ballGeo,ballMat,0,1.8,-18);velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
 function out(){state.outs++;state.flying=false;clearCount();if(state.outs>=3){state.outs=0;state.bases=[false,false,false];state.inning++;announce(state.inning>9?'FINAL SCORE':'NEXT INNING');if(state.inning>9)finishGame()}else announce('OUT '+state.outs);hud()}
-function swing(){if(state.gameOver)return;lastSwing=performance.now();if(state.mode==='BRAWL'){const p=players.filter(p=>p.alive).sort((a,b)=>a.group.position.distanceTo(camera.position)-b.group.position.distanceTo(camera.position))[0];if(p){p.health--;p.group.rotation.z+=.35;if(p.health<=0){p.alive=false;p.group.rotation.z=Math.PI/2;state.kos++;announce('KNOCKOUT!')}else{playCharacter(p,'run');announce('HIT!')}}hud();return}
+function swing(){if(state.gameOver)return;lastSwing=performance.now();if(state.mode==='BRAWL'){combatHit();return}
 if(!ball||!state.flying){announce('WAIT FOR PITCH');return}
 const d=ball.position.distanceTo(new THREE.Vector3(0,1.5,0));if(d<4.2){velocity.set((Math.random()-.5)*9,12+Math.random()*7,-19-Math.random()*17);state.contact=true;announce('CRACK!')}else{strike();announce('SWING AND MISS')}}
+function switchWeapon(){weaponKind=weaponKind==='BAT'?'FISTS':'BAT';document.getElementById('weaponSwitch').textContent='WEAPON: '+weaponKind;weapon.visible=weaponKind==='BAT';announce(weaponKind+' EQUIPPED')}
+document.getElementById('weaponSwitch').onclick=switchWeapon;
 function toggle(){state.mode=state.mode==='BAT'?'BRAWL':'BAT';hud();announce(state.mode+' MODE')}
 document.getElementById('pitch').onclick=pitch;document.getElementById('take').onclick=takePitch;document.getElementById('swing').onclick=swing;document.getElementById('mode').onclick=toggle;document.getElementById('reset').onclick=()=>location.reload();
 const controller0=renderer.xr.getController(0),controller1=renderer.xr.getController(1);rig.add(controller0,controller1);
@@ -109,7 +155,10 @@ renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev
 if(state.flying&&ball){ball.position.addScaledVector(velocity,dt);velocity.y-=9.81*dt;if(ball.position.z>4&&velocity.z>0){takePitch()}
 else if(ball.position.y<.12){if(state.contact&&velocity.z<0&&ball.position.z<-75){state.hr++;advance(4)}else if(state.contact&&velocity.z<0){const distance=-ball.position.z;advance(distance>55?3:distance>32?2:1)}else if(!state.contact){takePitch()}else out();state.flying=false;if(ball){scene.remove(ball);ball=null}}}
 const session=renderer.xr.getSession();if(session){const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=a.length>=4?a[2]:a[0],sy=a.length>=4?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*2.4)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(gp.buttons[4]?.pressed&&!buttonHeld){toggle();buttonHeld=true}else if(!gp.buttons[4]?.pressed)buttonHeld=false}}
-for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){p.group.rotation.y=Math.sin(now*.0007+i)*.13;if(p.mixer&&now-lastSwing>700)playCharacter(p,'idle')}}for(const mixer of mixers)mixer.update(dt);
+for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){p.group.rotation.y=Math.sin(now*.0007+i)*.13;if(p.mixer&&now-lastSwing>700)playCharacter(p,'idle')}}physics.step(1/60,dt,3);
+for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
+for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
+for(const mixer of mixers)mixer.update(dt);
 if(importedStadium.children[0]?.userData.mixer)importedStadium.children[0].userData.mixer.update(dt);renderer.render(scene,camera)});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});hud();
 </script></body></html>
