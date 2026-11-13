@@ -3,20 +3,23 @@
 <title>NO RULES BASEBALL VR</title>
 <style>body{margin:0;background:#080f19;color:#fff;font:16px system-ui;overflow:hidden}#hud{position:fixed;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none;text-shadow:1px 2px 3px #000}#panel{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#091321dd;border:1px solid #7592aa;border-radius:12px;padding:12px;text-align:center;max-width:95vw}button{background:#c53b27;color:white;border:0;border-radius:7px;padding:10px;margin:3px;font-weight:bold}small{color:#b9c8d9}#msg{position:fixed;top:22%;width:100%;text-align:center;font-weight:900;font-size:28px;text-shadow:2px 3px #000;pointer-events:none}canvas{display:block}</style></head>
 <body><div id="hud"><b id="score">INNING 1 / 9 · HOME 0 : AWAY 0</b><b id="status">HR 0 · KOs 0 · OUTS 0</b></div><div id="msg"></div>
-<div id="panel"><b>NO RULES BASEBALL — VR PROTOTYPE</b><div><button id="pitch">PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="reset">RESET</button></div><small>Quest: Enter VR, right trigger to swing/attack, left trigger to pitch, A to change mode. Desktop buttons also work.</small></div>
+<div id="panel"><b>NO RULES BASEBALL — PHASE 1 · IMPORTED STADIUM</b><div><button id="pitch">PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="reset">RESET</button></div><small>Quest: Enter VR, left stick moves, right trigger swings, left trigger pitches. Imported stadium loads online. Desktop buttons also work.</small></div>
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
 import {VRButton} from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/webxr/VRButton.js';
+import {GLTFLoader} from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/loaders/GLTFLoader.js';
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x8bbbe0);scene.fog=new THREE.Fog(0x8bbbe0,95,260);
 const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);camera.position.set(0,1.7,5);
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.xr.enabled=true;renderer.shadowMap.enabled=true;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
 scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(-30,65,25);scene.add(sun);
 const mat=(c)=>new THREE.MeshStandardMaterial({color:c,roughness:.83});
+const fallbackField=new THREE.Group();
 const grass=mat(0x326c38),dirt=mat(0x9b6d48),white=mat(0xf3eee0),red=mat(0xb52c2d),blue=mat(0x204b87),skin=mat(0xd9a178),metal=mat(0x454b55);
-function mesh(g,m,x=0,y=0,z=0){let o=new THREE.Mesh(g,m);o.position.set(x,y,z);scene.add(o);return o}
+function mesh(g,m,x=0,y=0,z=0){let o=new THREE.Mesh(g,m);o.position.set(x,y,z);scene.add(o);fallbackField.add(o);return o}
+scene.add(fallbackField);
 mesh(new THREE.PlaneGeometry(400,400),grass).rotation.x=-Math.PI/2;
 const diamond=mesh(new THREE.PlaneGeometry(35,35),dirt,0,.012,-22);diamond.rotation.x=-Math.PI/2;diamond.rotation.z=Math.PI/4;
-function line(a,b){const pts=[new THREE.Vector3(...a),new THREE.Vector3(...b)];const o=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xffffff}));scene.add(o)}
+function line(a,b){const pts=[new THREE.Vector3(...a),new THREE.Vector3(...b)];const o=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xffffff}));fallbackField.add(o)}
 line([0,.06,0],[46,.06,-46]);line([0,.06,0],[-46,.06,-46]);
 for(const [x,z] of [[0,0],[14,-14],[0,-28],[-14,-14]]){let b=mesh(new THREE.BoxGeometry(1,.09,1),white,x,.06,z);b.rotation.y=Math.PI/4}
 mesh(new THREE.CylinderGeometry(2.4,2.4,.13,32),dirt,0,.07,-18);
@@ -27,6 +30,22 @@ const body=new THREE.Mesh(new THREE.CapsuleGeometry(.42,.9,4,8),shirt);body.posi
 const head=new THREE.Mesh(new THREE.SphereGeometry(.29,12,10),skin);head.position.y=2.12;group.add(head);
 for(const s of [-1,1]){let arm=new THREE.Mesh(new THREE.CapsuleGeometry(.13,.72,3,6),skin);arm.position.set(s*.59,1.42,0);arm.rotation.z=s*.23;group.add(arm);let leg=new THREE.Mesh(new THREE.CapsuleGeometry(.16,.8,3,6),metal);leg.position.set(s*.22,.5,0);group.add(leg)}
 return {group,health:3,alive:true}}
+// Phase 1: authentic third-party CC0 stadium scene (not generated in this project).
+const importedStadium=new THREE.Group();scene.add(importedStadium);
+const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
+const loadStatus=document.createElement('div');loadStatus.style.cssText='position:fixed;top:64px;left:12px;color:white;background:#071322aa;padding:5px 9px;border-radius:6px;font:12px system-ui';loadStatus.textContent='Loading imported stadium…';document.body.appendChild(loadStatus);
+new GLTFLoader().load(assetUrl,gltf=>{
+ const stadium=gltf.scene;
+ const bounds=new THREE.Box3().setFromObject(stadium),size=new THREE.Vector3(),center=new THREE.Vector3();bounds.getSize(size);bounds.getCenter(center);
+ // Center on the imported park; preserve its real-world metre scale.
+ stadium.position.set(-center.x,-bounds.min.y,-center.z);
+ importedStadium.add(stadium);
+ fallbackField.visible=false;
+ loadStatus.textContent='IMPORTED CC0 STADIUM LOADED';
+ gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
+},undefined,e=>{loadStatus.textContent='Stadium CDN unavailable — fallback field active';console.error('Imported stadium load failed',e)});
+const rig=new THREE.Group();scene.add(rig);rig.add(camera);
+
 const players=[person(0,-19,red),person(-13,-14,blue),person(13,-14,blue),person(0,-28,blue),person(0,-40,blue)];
 let ball=null,velocity=new THREE.Vector3(),state={inning:1,home:0,away:0,hr:0,kos:0,outs:0,mode:'BAT',flying:false},lastPitch=0,lastSwing=0;
 const ballGeo=new THREE.SphereGeometry(.115,12,10),ballMat=white;
@@ -39,15 +58,15 @@ if(!ball||!state.flying){announce('WAIT FOR PITCH');return}
 const d=ball.position.distanceTo(new THREE.Vector3(0,1.5,0));if(d<4.2){velocity.set((Math.random()-.5)*9,12+Math.random()*7,-19-Math.random()*17);announce('CRACK!')}else announce('SWING AND MISS')}
 function toggle(){state.mode=state.mode==='BAT'?'BRAWL':'BAT';hud();announce(state.mode+' MODE')}
 document.getElementById('pitch').onclick=pitch;document.getElementById('swing').onclick=swing;document.getElementById('mode').onclick=toggle;document.getElementById('reset').onclick=()=>location.reload();
-const controller0=renderer.xr.getController(0),controller1=renderer.xr.getController(1);scene.add(controller0,controller1);
+const controller0=renderer.xr.getController(0),controller1=renderer.xr.getController(1);rig.add(controller0,controller1);
 controller0.addEventListener('selectstart',pitch);controller1.addEventListener('selectstart',swing);
 const weapon=new THREE.Group();const handle=new THREE.Mesh(new THREE.CylinderGeometry(.045,.05,.8,12),mat(0x744525));handle.position.y=-.05;weapon.add(handle);const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.09,.055,.8,12),mat(0xa4a8ad));barrel.position.y=.73;weapon.add(barrel);weapon.rotation.x=Math.PI/2;controller1.add(weapon);
 const clock=new THREE.Clock();let prev=performance.now(),buttonHeld=false;
 renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;
 if(state.flying&&ball){ball.position.addScaledVector(velocity,dt);velocity.y-=9.81*dt;if(ball.position.z>4&&velocity.z>0){out();scene.remove(ball);ball=null}
 else if(ball.position.y<.12){if(velocity.z<0&&ball.position.z<-75){state.hr++;state.home++;announce('HOME RUN!');hud()}else if(velocity.z<0){state.home++;announce('BASE HIT!');hud()}else out();state.flying=false;scene.remove(ball);ball=null}}
-const session=renderer.xr.getSession();if(session){for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(gp.buttons[4]?.pressed&&!buttonHeld){toggle();buttonHeld=true}else if(!gp.buttons[4]?.pressed)buttonHeld=false}}
+const session=renderer.xr.getSession();if(session){const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=a.length>=4?a[2]:a[0],sy=a.length>=4?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*2.4)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(gp.buttons[4]?.pressed&&!buttonHeld){toggle();buttonHeld=true}else if(!gp.buttons[4]?.pressed)buttonHeld=false}}
 for(let i=0;i<players.length;i++){const p=players[i];if(p.alive)p.group.rotation.y=Math.sin(now*.0007+i)*.13}
-renderer.render(scene,camera)});
+if(importedStadium.children[0]?.userData.mixer)importedStadium.children[0].userData.mixer.update(dt);renderer.render(scene,camera)});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});hud();
 </script></body></html>
