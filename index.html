@@ -169,6 +169,7 @@ function enemyAI(dt,now){
  }
 }
 const physics=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
+physics.solver.iterations=18;physics.solver.tolerance=.0008;
 physics.defaultContactMaterial.friction=.7;
 const groundBody=new CANNON.Body({mass:0,shape:new CANNON.Plane()});groundBody.quaternion.setFromEuler(-Math.PI/2,0,0);physics.addBody(groundBody);
 const ragdolls=[];const effects=[];const bloodDecals=[];let bloodEnabled=true;
@@ -240,7 +241,7 @@ function buildRagdoll(p,impulse){
   const bone=bones.find(b=>re.test(b.name));if(!bone)continue;
   const world=bone.getWorldPosition(new THREE.Vector3());
   const quat=bone.getWorldQuaternion(new THREE.Quaternion());
-  const body=new CANNON.Body({mass,shape:new CANNON.Sphere(radius),linearDamping:.52,angularDamping:.82,collisionFilterGroup:2,collisionFilterMask:1});
+  const body=new CANNON.Body({mass,shape:new CANNON.Sphere(radius),linearDamping:.18,angularDamping:.46,collisionFilterGroup:2,collisionFilterMask:1});
   body.position.set(world.x,world.y,world.z);body.quaternion.set(quat.x,quat.y,quat.z,quat.w);
   physics.addBody(body);parts.set(id,{bone,body,parentId,restPosition:bone.position.clone(),restQuaternion:bone.quaternion.clone()});
  }
@@ -252,7 +253,11 @@ function buildRagdoll(p,impulse){
   const pivotA=parent.body.pointToLocalFrame(b),pivotB=part.body.pointToLocalFrame(b);
   const id=[...parts.entries()].find(([,value])=>value===part)?.[0]||'';
   const damaged=id.endsWith('_l')?(id.includes('arm')?p.fractures?.leftArm:p.fractures?.leftLeg):id.endsWith('_r')?(id.includes('arm')?p.fractures?.rightArm:p.fractures?.rightLeg):false;
-  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,damaged?35:120);physics.addConstraint(joint);constraints.push(joint);
+  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,damaged?75:350);physics.addConstraint(joint);constraints.push(joint);
+  // Rotational limit prevents unconstrained 360-degree limb spinning.
+  const swing=id==='head'?.55:id.startsWith('lowerarm')?1.55:id.startsWith('calf')?1.15:id.startsWith('upperarm')?1.35:id.startsWith('thigh')?.95:.55;
+  const limit=new CANNON.ConeTwistConstraint(parent.body,part.body,{pivotA,pivotB,axisA:new CANNON.Vec3(0,1,0),axisB:new CANNON.Vec3(0,1,0),angle:damaged?Math.min(Math.PI,swing*1.35):swing,twistAngle:damaged?.8:.35,maxForce:damaged?50:240});
+  physics.addConstraint(limit);constraints.push(limit);
  }
  p.ragdoll=true;p.ragdollParts=parts;p.ragdollConstraints=constraints;p.fallTime=0;p.actionLockUntil=Infinity;
  p.mixer?.stopAllAction();
@@ -354,7 +359,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-neck-wound-skeletal-reaction-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-ragdoll-anatomical-joint-limits-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -720,7 +725,7 @@ for(const p of players){
   if(speed>9)b.velocity.scale(9/speed,b.velocity);
   const spin=Math.hypot(b.angularVelocity.x,b.angularVelocity.y,b.angularVelocity.z);
   if(spin>6)b.angularVelocity.scale(6/spin,b.angularVelocity);
-  if(p.fallTime>4){b.velocity.scale(.85,b.velocity);b.angularVelocity.scale(.75,b.angularVelocity)}
+  if(p.fallTime>4){b.velocity.scale(.96,b.velocity);b.angularVelocity.scale(.92,b.angularVelocity)}
  }
  // Update imported skeleton bones from constrained Cannon physics bodies.
  for(const {bone,body} of p.ragdollParts.values()){
