@@ -51,7 +51,7 @@ new GLTFLoader().load(assetUrl,gltf=>{
  loadStatus.textContent='IMPORTED STADIUM LOADED · NO GENERATED ASSETS';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
 },undefined,e=>{loadStatus.textContent='ERROR: IMPORTED STADIUM FAILED — NO FALLBACK';reportError('Stadium GLB '+assetUrl,e)});
-const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,0);
+const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(.85,0,.85);rig.rotation.y=Math.PI;
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Group();vrBoard.position.set(0,-.32,-1.7);camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
@@ -59,10 +59,12 @@ function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCt
 
 
 // Baseball diamond reference positions in metres, centered on home plate.
-const playerPositions=[[0,-18],[0,-12],[0,-27],[-19,-19],[19,-19],[-31,-42],[0,-54],[31,-42],[0,-3]];
+// Defensive nine: pitcher, catcher, 1B, 2B, 3B, SS, LF, CF, RF.
+// Home plate is (0,0); first base is toward +X and second base is toward -Z.
+const playerPositions=[[0,-18],[0,2.4],[17,-18],[8,-29],[-17,-18],[-8,-29],[-32,-48],[0,-57],[32,-48]];
 const players=playerPositions.map(([x,z],i)=>person(x,z));
-let aiOn=true,ruleMode='CHAOS',lastAI=0,playerHP=100,enemyHits=0;
-let activeFielder=0;const fieldRoles=['PITCHER','CATCHER','CENTER FIELD','THIRD BASE','FIRST BASE','LEFT FIELD','DEEP CENTER','RIGHT FIELD','BATTER'];
+let aiOn=true,ruleMode='BASEBALL',lastAI=0,playerHP=100,enemyHits=0;
+let activeFielder=0;const fieldRoles=['PITCHER','CATCHER','FIRST BASE','SECOND BASE','THIRD BASE','SHORTSTOP','LEFT FIELD','CENTER FIELD','RIGHT FIELD'];
 // Stable relationships: teammates may defend one another, but each has its own priorities.
 for(let i=0;i<players.length;i++){
  const mind=players[i].psyche;
@@ -382,7 +384,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-skeleton-fitted-ragdoll-colliders-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-nine-defensive-baseball-positions-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
