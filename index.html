@@ -16,7 +16,7 @@ button{background:#c53b27;color:white;border:0;border-radius:7px;padding:9px 11p
 body.in-vr #panel,body.in-vr #hud,body.in-vr #msg,body.in-vr #showDiagnostics,body.in-vr #diagnostics{display:none!important}
 </style></head>
 <body><div id="hud"><b id="score">INNING 1 / 9 · HOME 0 : AWAY 0</b><b id="count">TOP · 0-0 · BASES ○○○</b><b id="status">HR 0 · KOs 0 · OUTS 0</b></div><div id="msg"></div><div id="diagnostics" style="position:fixed;right:10px;bottom:130px;width:min(380px,90vw);max-height:32vh;overflow:auto;background:#190d11ed;color:#fff;border:1px solid #e27777;border-radius:9px;padding:9px;font:12px monospace;display:none;z-index:10"><b>GAME DIAGNOSTICS</b><button id="closeDiagnostics" style="float:right;padding:2px 7px">X</button><div id="errorLines"></div></div><button id="showDiagnostics" style="position:fixed;right:10px;bottom:85px;z-index:9;background:#233e57">ERROR LOG <span id="errorCount">0</span></button>
-<div id="panel"><b>NO RULES BASEBALL — PHASE 6 · AI & GAME MODES</b><div><button id="pitch">PITCH</button><button id="take">TAKE PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="weaponSwitch">WEAPON: BAT</button><button id="goreToggle">BLOOD: ON</button><button id="aiToggle">AI: ON</button><button id="gameMode">RULES: CHAOS</button><button id="soundToggle">SOUND: ON</button><button id="reset">RESET</button></div><small>QUEST: Right grip holds bat, physically swing to hit. Left trigger pitches. A switches weapon/takes pitch; B toggles combat; X rules; Y AI. Browser buttons are debug-only.</small></div>
+<div id="panel"><b>NO RULES BASEBALL — PHASE 6 · AI & GAME MODES</b><div><button id="pitch">PITCH</button><button id="take">TAKE PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="weaponSwitch">WEAPON: BAT</button><button id="goreToggle">BLOOD: ON</button><button id="aiToggle">AI: ON</button><button id="gameMode">RULES: BASEBALL</button><button id="soundToggle">SOUND: ON</button><button id="reset">RESET</button></div><small>QUEST: Right grip holds bat, physically swing to hit. Left trigger pitches. A switches weapon/takes pitch; B toggles combat; X rules; Y AI. Left stick moves; right stick turns. Browser buttons are debug-only.</small></div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
@@ -37,36 +37,31 @@ scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.Di
 // Imported-only visuals: no generated character or environment meshes.
 function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);return {group,health:8,alive:true,psyche:{courage:.25+Math.random()*.7,aggression:.2+Math.random()*.8,loyalty:Math.random(),fear:0,anger:0,trust:0,temperament:Math.random(),decisionAt:0,goal:'idle',memory:{lastHitAt:0,lastThreat:null},idleUntil:0}}}
 // Phase 1: authentic third-party CC0 stadium scene (not generated in this project).
-let baseballScale=1;
 const stadiumColliders=[];
 function blockedByStadium(pos,radius=.34){return stadiumColliders.some(b=>pos.y<b.max.y&&pos.y+1.5>b.min.y&&pos.x>b.min.x-radius&&pos.x<b.max.x+radius&&pos.z>b.min.z-radius&&pos.z<b.max.z+radius)}
 const importedStadium=new THREE.Group();scene.add(importedStadium);
-const assetUrl='/assets/modern_stadium.glb';
+const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
 const loadStatus=document.createElement('div');loadStatus.style.cssText='position:fixed;top:64px;left:12px;color:white;background:#071322aa;padding:5px 9px;border-radius:6px;font:12px system-ui';loadStatus.textContent='Loading imported stadium…';document.body.appendChild(loadStatus);
 new GLTFLoader().load(assetUrl,gltf=>{
  const stadium=gltf.scene;
- // Imported scene only. Never generate a substitute field.
- const box=new THREE.Box3().setFromObject(stadium);
- const center=box.getCenter(new THREE.Vector3());
- stadium.position.set(-center.x,-box.min.y,-center.z);
+ // Align gameplay coordinates to the imported diamond, with home at the origin.
+ const home = stadium.getObjectByName('061-home-plate-and-batters-boxes');
+ const mound = stadium.getObjectByName('062-pitchers-mound');
+ if (!home || !mound) {
+  reportError('Stadium layout', 'Missing home plate or pitcher mound');
+  return;
+ }
+ const homePosition = home.getWorldPosition(new THREE.Vector3());
+ const moundDirection = mound.getWorldPosition(new THREE.Vector3()).sub(homePosition);
+ const yaw = Math.atan2(-moundDirection.x, moundDirection.z) + Math.PI;
+ const up = new THREE.Vector3(0, 1, 0);
+ stadium.rotation.y = yaw;
+ stadium.position.copy(homePosition.applyAxisAngle(up, yaw).negate());
  importedStadium.add(stadium);
  stadium.updateMatrixWorld(true);
- const bounds=new THREE.Box3().setFromObject(stadium),size=bounds.getSize(new THREE.Vector3());
- // Form a complete defensive nine inside the open playing area, even in a soccer stadium.
- // A stadium's overall bounding box includes its stands; use a conservative central footprint.
- const fieldRadius=Math.max(7,Math.min(size.x,size.z)*.22);
- const factor=Math.min(1,fieldRadius/62);
- const offset=new THREE.Vector3(0,0,0);
- for(let i=0;i<players.length;i++){
-  const [x,z]=playerPositions[i];
-  const position=new THREE.Vector3(x*factor+offset.x,0,z*factor+offset.z);
-  players[i].group.position.copy(position);
-  initialPositions[i].copy(position);
-  players[i].group.rotation.y=i===1?0:Math.atan2(-position.x,-position.z);
+ for (let i = 0; i < players.length; i++) {
+  players[i].group.position.copy(initialPositions[i]);
  }
- rig.position.set(.85*factor,0,.85*factor);
- // Pitching distance must match the actual scaled formation.
- baseballScale=factor;
  // Collision proxies use imported stadium meshes; no visible substitute geometry.
  stadium.updateMatrixWorld(true);
  stadiumColliders.length=0;
@@ -74,19 +69,19 @@ new GLTFLoader().load(assetUrl,gltf=>{
  
  loadStatus.textContent='IMPORTED STADIUM LOADED · NO GENERATED ASSETS';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
-},undefined,e=>{loadStatus.textContent='NEW STADIUM FILE NOT YET DEPLOYED';reportError('Stadium GLB '+assetUrl,e)});
-const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(.85,0,.85);rig.rotation.y=Math.PI;
+},undefined,e=>{loadStatus.textContent='IMPORTED STADIUM FAILED TO LOAD';reportError('Stadium GLB '+assetUrl,e)});
+const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(.85,0,.3);
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
-const vrBoard=new THREE.Group();vrBoard.position.set(0,-.32,-1.7);camera.add(vrBoard);
+const vrBoard=new THREE.Mesh(new THREE.PlaneGeometry(1.12,.28),new THREE.MeshBasicMaterial({map:vrTexture,transparent:true,depthTest:false}));vrBoard.position.set(0,-.49,-1.7);vrBoard.renderOrder=10;camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
-function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=errors.length?errors[errors.length-1]:'SYSTEM OK · ASSETS: '+(loadStatus?.textContent||'pending');vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('GRIP HOLD BAT · SWING PHYSICALLY · A WEAPON/TAKE · B MODE · X RULES',25,218);vrTexture.needsUpdate=true}
+function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=errors.length?errors[errors.length-1]:'SYSTEM OK · ASSETS: '+(loadStatus?.textContent||'pending');vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('LEFT STICK MOVE · RIGHT STICK TURN · LEFT TRIGGER PITCH · GRIP BAT',25,218);vrTexture.needsUpdate=true}
 
 
 // Baseball diamond reference positions in metres, centered on home plate.
 // Defensive nine: pitcher, catcher, 1B, 2B, 3B, SS, LF, CF, RF.
 // Home plate is (0,0); first base is toward +X and second base is toward -Z.
-const playerPositions=[[0,-18],[0,2.4],[17,-18],[8,-29],[-17,-18],[-8,-29],[-32,-48],[0,-57],[32,-48]];
-const players=playerPositions.map(([x,z],i)=>person(x,z));
+const playerPositions=[[0,-12.73],[0,1.85],[12.73,-12.73],[6,-23],[-12.73,-12.73],[-6,-23],[-13,-31],[0,-36],[13,-31]];
+const players=playerPositions.map(([x,z])=>{const p=person(x,z);p.group.rotation.y=Math.atan2(-x,-z);return p});
 let aiOn=true,ruleMode='BASEBALL',lastAI=0,playerHP=100,enemyHits=0;
 let activeFielder=0;const fieldRoles=['PITCHER','CATCHER','FIRST BASE','SECOND BASE','THIRD BASE','SHORTSTOP','LEFT FIELD','CENTER FIELD','RIGHT FIELD'];
 // Stable relationships: teammates may defend one another, but each has its own priorities.
@@ -118,7 +113,7 @@ document.getElementById('gameMode').onclick=()=>{ruleMode=ruleMode==='CHAOS'?'BA
 function enemyAI(dt,now){
  if(!aiOn||state.gameOver)return;
  const target=camera.getWorldPosition(new THREE.Vector3());target.y=0;
- const fighting=state.mode==='BRAWL'&&ruleMode==='CHAOS';
+ const fighting=state.mode==='BRAWL';
  let nearest=null,nearestDistance=Infinity;
  for(let i=0;i<players.length;i++){
   const p=players[i];if(!p.alive)continue;
@@ -129,7 +124,7 @@ function enemyAI(dt,now){
   if(mind&&mind.goal==='flee'&&mind.lastThreatAt&&now-mind.lastThreatAt>11000)mind.goal='circle';
   if(mind){mind.fear=Math.max(0,mind.fear-dt*.025);mind.anger=Math.max(0,mind.anger-dt*.012);mind.grudge=Math.max(0,mind.grudge-dt*.001)}
   // During a live hit, the nearest fielder pursues the actual ball.
-  if(!fighting&&state.contact&&state.flying&&ball&&i!==8){
+  if(!fighting&&state.contact&&state.flying&&ball&&i>1){
    const distanceToBall=p.group.position.distanceTo(ball.position);
    if(distanceToBall<nearestDistance){nearest=p;nearestDistance=distanceToBall}
   }
@@ -145,7 +140,7 @@ function enemyAI(dt,now){
   if(fighting){
    // Engage across the field instead of waiting until the player walks within 9 metres.
    const d=target.distanceTo(p.group.position);
-   if(d<85){
+   if(d<(ruleMode==='CHAOS'?85:24)){
     destination.copy(target);
     if(mind?.goal==='attack'&&d<2.1)destination.copy(p.group.position);
     if(mind?.goal==='circle'&&d<3.5)destination.copy(p.group.position);
@@ -411,7 +406,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-modern-stadium-formation-scale-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='quest-controls-diamond-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -513,15 +508,16 @@ function playCharacter(p,name){
  if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';
  if((name==='idle'||name==='walk'||name==='run')&&p.actionLockUntil&&performance.now()<p.actionLockUntil)return;
  if(!p.mixer||!p.actions)return;
- const aliases={idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|fire|shoot)/i,hit:/^(hit|hurt|react|stagger|impact)/i,death:/^(death|die|dead|fall|defeat)/i};
+ const aliases={throw:/^(baseball_pitch|pitch|grenade_throw)$/i,idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|fire|shoot)/i,hit:/^(hit|hurt|react|stagger|impact)/i,death:/^(death|die|dead|fall|defeat)/i};
  const requested=p.clips?.[name]||name;
  const direct=p.actions[requested]||p.actions[requested.toLowerCase()];
  const key=Object.keys(p.actions).find(k=>aliases[name]?.test(k));
  const next=direct||p.actions[key];
  if(!next)return;
- if(name==='attack'||name==='hit')p.actionLockUntil=performance.now()+Math.max(350,Math.min(1200,next.getClip().duration*1000));
+ if(name==='attack'||name==='hit'||name==='throw')p.actionLockUntil=performance.now()+Math.max(350,Math.min(1200,next.getClip().duration*1000));
  if(name==='death')p.actionLockUntil=Infinity;
  if(!next||next===p.currentAction)return;
+ if(name==='throw'){next.setLoop(THREE.LoopOnce,1);next.clampWhenFinished=true}
  next.enabled=true;next.reset().fadeIn(.2).play();
  p.currentAction?.fadeOut(.2);p.currentAction=next;
 }
@@ -532,14 +528,34 @@ function clearCount(){state.balls=0;state.strikes=0;count()}
 function advance(n){let runs=0;const next=[false,false,false];for(let i=2;i>=0;i--)if(state.bases[i]){if(i+n>=3)runs++;else next[i+n]=true}if(n>=4)runs++;else next[n-1]=true;state.bases=next;state.home+=runs;clearCount();announce(n===4?'HOME RUN · '+runs+' RUNS!':n===1?'SINGLE':n===2?'DOUBLE':'TRIPLE');hud()}
 function walk(){let b=state.bases;if(b[0]&&b[1]&&b[2])state.home++;if(b[0]&&b[1])b[2]=true;if(b[0])b[1]=true;b[0]=true;clearCount();announce('BALL FOUR · WALK');hud()}
 function strike(){state.strikes++;if(state.strikes>=3){announce('STRIKE THREE!');out()}else{announce('STRIKE '+state.strikes);hud()}}
-function takePitch(){if(!ball||!state.flying||state.contact)return;const inZone=Math.abs(ball.position.x)<.48;state.flying=false;scene.remove(ball);ball=null;if(inZone)strike();else{state.balls++;if(state.balls>=4)walk();else{announce('BALL '+state.balls);hud()}}}
+function takePitch(){if(!ball||!state.flying||state.contact)return;const t=-ball.position.z/velocity.z;const y=ball.position.y+velocity.y*t-4.905*t*t;const inZone=Math.abs(ball.position.x+velocity.x*t)<.48&&y>.55&&y<1.55;state.flying=false;scene.remove(ball);ball=null;if(inZone)strike();else{state.balls++;if(state.balls>=4)walk();else{announce('BALL '+state.balls);hud()}}}
 function finishGame(){state.gameOver=true;state.flying=false;announce('FINAL · HOME '+state.home+' / AWAY '+state.away+' · HR '+state.hr+' · KOs '+state.kos);document.getElementById('panel').querySelector('b').textContent='FINAL SCORE · HOME '+state.home+' : AWAY '+state.away+' · HOME RUNS '+state.hr+' · KOs '+state.kos}
 
 // No procedural baseball mesh. Ball physics are disabled until an imported ball is loaded.
 const ballGeo=null,ballMat=null;let importedBall=null;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33765/v1/model.glb',g=>{importedBall=g.scene;loadStatus.textContent+=' · BASEBALL IMPORTED'},undefined,e=>reportError('Baseball import',e));
 function announce(t){if(/HOME RUN|KNOCKDOWN|FRACTURED|CRACK|STRIKE THREE/.test(t))beep(340,.14);document.getElementById('msg').textContent=t;setTimeout(()=>{if(document.getElementById('msg').textContent===t)document.getElementById('msg').textContent=''},1500)}
 function hud(){document.getElementById('score').textContent='INNING '+state.inning+' / 9 · HOME '+state.home+' : AWAY '+state.away;document.getElementById('status').textContent='HR '+state.hr+' · KOs '+state.kos+' · HP '+playerHP+' · OUTS '+state.outs;document.getElementById('mode').textContent='MODE: '+state.mode;count()}
-function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);if(!importedBall){announce('WAITING FOR IMPORTED BASEBALL');return}ball=importedBall.clone(true);ball.position.set(0,1.8,-18*baseballScale);scene.add(ball);velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
+let pitchRelease=0;
+function pitch(){
+ if(state.gameOver||state.mode!=='BAT'||state.flying||pitchRelease)return;
+ if(!importedBall){announce('WAITING FOR IMPORTED BASEBALL');return}
+ const pitcher=players[0];
+ if(!pitcher.alive){announce('PITCHER IS DOWN');return}
+ playCharacter(pitcher,'throw');
+ pitchRelease=performance.now()+420;
+}
+function releasePitch(){
+ pitchRelease=0;
+ const pitcher=players[0];
+ if(state.mode!=='BAT'||!pitcher.alive||state.gameOver)return;
+ ball=importedBall.clone(true);
+ ball.position.copy(pitcher.group.position).add(new THREE.Vector3(0,1.72,0));
+ scene.add(ball);
+ const flightTime=Math.max(.15,-ball.position.z/22);
+ const targetX=(Math.random()-.5)*1.3;
+ velocity.set((targetX-ball.position.x)/flightTime,(1.15-ball.position.y)/flightTime+4.905*flightTime,22);
+ state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!');
+}
 function out(){state.outs++;state.flying=false;clearCount();if(state.outs>=3){state.outs=0;state.bases=[false,false,false];state.inning++;announce(state.inning>9?'FINAL SCORE':'NEXT INNING');if(state.inning>9)finishGame()}else announce('OUT '+state.outs);hud()}
 function swing(){if(state.gameOver)return;lastSwing=performance.now();if(state.mode==='BRAWL'){combatHit();return}
 if(!ball||!state.flying){announce('WAIT FOR PITCH');return}
@@ -548,9 +564,21 @@ if(renderer.xr.isPresenting){announce('SWING THE TRACKED BAT');return}
 const d=ball.position.distanceTo(new THREE.Vector3(0,1.5,0));if(d<.65){velocity.set((Math.random()-.5)*9,12+Math.random()*7,-19-Math.random()*17);state.contact=true;announce('CRACK!')}else{strike();announce('SWING AND MISS')}}
 function switchWeapon(){state.mode='BRAWL';weaponKind=weaponKind==='BAT'?'KNIFE':weaponKind==='KNIFE'?'FISTS':'BAT';document.getElementById('weaponSwitch').textContent='WEAPON: '+weaponKind;weapon.visible=weaponKind==='BAT'&&batHeld;announce(weaponKind+' EQUIPPED')}
 document.getElementById('weaponSwitch').onclick=switchWeapon;
-function toggle(){state.mode=state.mode==='BAT'?'BRAWL':'BAT';hud();announce(state.mode==='BRAWL'?'BRAWL · NPCS APPROACHING':'BASEBALL MODE')}
+function toggle(){state.mode=state.mode==='BAT'?'BRAWL':'BAT';if(state.mode==='BAT'&&!knifeHeld){weaponKind='BAT';document.getElementById('weaponSwitch').textContent='WEAPON: BAT'}hud();announce(state.mode==='BRAWL'?'BRAWL · NPCS APPROACHING':'BASEBALL MODE')}
 document.getElementById('pitch').onclick=pitch;document.getElementById('take').onclick=takePitch;document.getElementById('swing').onclick=swing;document.getElementById('mode').onclick=toggle;document.getElementById('reset').onclick=()=>location.reload();
-const controller0=renderer.xr.getController(0),controller1=renderer.xr.getController(1);rig.add(controller0,controller1);
+const controller0=new THREE.Group(),controller1=new THREE.Group();
+for(let i=0;i<2;i++){
+ const tracked=renderer.xr.getController(i);
+ rig.add(tracked);
+ tracked.addEventListener('connected',({data})=>{
+  if(data.handedness==='left')tracked.add(controller0);
+  if(data.handedness==='right')tracked.add(controller1);
+ });
+ tracked.addEventListener('disconnected',({data})=>{
+  if(data.handedness==='left')controller0.removeFromParent();
+  if(data.handedness==='right')controller1.removeFromParent();
+ });
+}
  // Imported WebXR hand meshes, not procedural geometry. Hand tracking drives all finger joints.
  import('three/addons/webxr/XRHandModelFactory.js').then(({XRHandModelFactory})=>{
   const factory=new XRHandModelFactory();
@@ -599,8 +627,7 @@ function updateControllerHands(dt){
  }
 }
 // Quest controls: left trigger pitches; right trigger attacks only in fist mode.
-controller0.addEventListener('selectstart',pitch);
-controller1.addEventListener('selectstart',()=>{if(state.mode!=='BRAWL'){state.mode='BRAWL';hud();announce('FIGHT MODE · SWING OR TRIGGER TO STRIKE')}combatHit()});
+
 const weapon=new THREE.Group();controller1.add(weapon);weapon.visible=false;
 const droppedWeapons=[];
 let knifeHeld=false,knifeReady=false,knifeObject=null,knifeBody=null,knifeSwingAt=0;
@@ -639,7 +666,7 @@ function grabNearbyBat(){
  batHeld=true;announce('BAT GRIPPED');
 }let importedBatReady=false;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33763/v1/model.glb',g=>{const bat=g.scene;bat.rotation.x=-Math.PI/2;bat.position.set(0,0,-.4);weapon.add(bat);importedBatReady=true;loadStatus.textContent+=' · BAT IMPORTED'},undefined,e=>reportError('Bat import',e));
 renderer.xr.addEventListener('sessionstart',()=>{document.body.classList.add('in-vr');modelStatus.textContent='VR session started';loadStatus.style.display='none';modelStatus.style.display='none'});
-renderer.xr.addEventListener('sessionend',()=>{document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now(),buttonHeld=false;const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
+renderer.xr.addEventListener('sessionend',()=>{document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now();const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
 const batNear=new THREE.Vector3(),batFar=new THREE.Vector3(),batMotion=new THREE.Vector3(),batClosest=new THREE.Vector3();
 function segmentDistanceSquared(p,a,b){const ab=b.clone().sub(a);const len=ab.lengthSq();const t=len>1e-8?THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/len,0,1):0;batClosest.copy(a).addScaledVector(ab,t);return p.distanceToSquared(batClosest)}
 function physicalBatContact(now,dt){
@@ -660,7 +687,7 @@ function physicalBatContact(now,dt){
  state.contact=true;announce('CRACK!');
 }
 // Quest tracked melee: a real hand or imported bat must move through a target.
-let previousMeleeHand=null,previousMeleeTip=null,lastMeleeContact=0;
+let previousMeleeHand=null,previousMeleeTip=null,previousMeleeWeapon='',lastMeleeContact=0;
 // Layered neck-wound reaction on imported skeletal characters; no substitute meshes.
 function triggerNeckReaction(p,now){
  if(!p.model||p.ragdoll)return;
@@ -694,7 +721,8 @@ function trackedMelee(now,dt){
  const holdingBat=batHeld&&weaponKind==='BAT'&&importedBatReady;
  const holdingKnife=knifeHeld&&weaponKind==='KNIFE';
  const tip=holdingBat?controller1.localToWorld(new THREE.Vector3(0,0,-.85)):holdingKnife?controller1.localToWorld(new THREE.Vector3(0,0,-.28)):hand;
- const previous=(holdingBat||holdingKnife)?previousMeleeTip:previousMeleeHand;
+ const equipped=holdingBat?'BAT':holdingKnife?'KNIFE':'FISTS';
+ const previous=equipped===previousMeleeWeapon?(equipped==='FISTS'?previousMeleeHand:previousMeleeTip):null;
  const speed=previous?tip.distanceTo(previous)/Math.max(dt,.008):0;
  if(previous&&speed>(holdingBat?1.6:holdingKnife?.55:1.1)&&now-lastMeleeContact>380){
   for(const p of players){
@@ -708,7 +736,7 @@ function trackedMelee(now,dt){
 
    if(!centers.some(center=>segmentDistanceSquared(center,previous,tip)<reach*reach))continue;
    lastMeleeContact=now;
-   state.mode='BRAWL';hud();
+   state.mode='BRAWL';pitchRelease=0;if(ball){scene.remove(ball);ball=null;state.flying=false;state.contact=false}hud();
    const direction=tip.clone().sub(previous).normalize();
    const force=holdingBat?Math.min(11,4+speed):holdingKnife?Math.min(9,3+speed*.8):Math.min(7,2+speed*.6);
    p.health-=holdingBat?2:holdingKnife?3:1;registerThreat(p,holdingBat?1.4:.8,now);
@@ -721,12 +749,60 @@ function trackedMelee(now,dt){
    break;
   }
  }
- previousMeleeHand=hand.clone();previousMeleeTip=tip.clone();
+ previousMeleeHand=hand;previousMeleeTip=tip;previousMeleeWeapon=equipped;
+}
+const turnAxis = new THREE.Vector3(0,1,0);
+const headsetPosition = new THREE.Vector3();
+const movement = new THREE.Vector3();
+const nextPosition = new THREE.Vector3();
+const locomotionStarts = new THREE.Vector3();
+const headsetYaw = new THREE.Euler(0,0,0,'YXZ');
+const headsetRotation = new THREE.Quaternion();
+function stick(source,index){
+ const axes=source?.gamepad.axes;
+ const value=axes?.[(axes.length>=4?2:0)+index]??0;
+ return Math.abs(value)>.18?value:0;
+}
+function updateLocomotion(left,right,dt){
+ const headset=renderer.xr.getCamera();
+ const turn=-stick(right,0)*dt*THREE.MathUtils.degToRad(105);
+ locomotionStarts.copy(rig.position);
+ if(turn){
+  headsetPosition.setFromMatrixPosition(headset.matrixWorld).sub(rig.position);
+  headsetPosition.y=0;
+  rig.position.add(headsetPosition).sub(headsetPosition.applyAxisAngle(turnAxis,turn));
+  rig.rotateY(turn);
+ }
+ movement.set(stick(left,0),0,stick(left,1));
+ if(movement.lengthSq()){
+  headsetRotation.setFromRotationMatrix(headset.matrixWorld);
+  headsetYaw.setFromQuaternion(headsetRotation);
+  movement.clampLength(0,1).applyAxisAngle(turnAxis,headsetYaw.y+turn).multiplyScalar(dt*3.6);
+  nextPosition.copy(rig.position);
+  nextPosition.x+=movement.x;
+  if(!blockedByStadium(nextPosition))rig.position.x=nextPosition.x;
+  nextPosition.copy(rig.position);
+  nextPosition.z+=movement.z;
+  if(!blockedByStadium(nextPosition))rig.position.z=nextPosition.z;
+ }
+ // Keep virtual locomotion out of the next frame's swing and throw velocity.
+ if(turn||!locomotionStarts.equals(rig.position)){
+  rig.updateMatrixWorld(true);
+  if(prevBatTip)prevBatTip=controller1.localToWorld(new THREE.Vector3(0,0,-.92));
+  if(previousMeleeHand)previousMeleeHand=controller1.getWorldPosition(new THREE.Vector3());
+  if(previousMeleeTip){
+   const reach=batHeld&&weaponKind==='BAT'?.85:knifeHeld&&weaponKind==='KNIFE'?.28:0;
+   previousMeleeTip=controller1.localToWorld(new THREE.Vector3(0,0,-reach));
+  }
+  controller1.userData.prevPosition=controller1.getWorldPosition(new THREE.Vector3());
+  controller1.userData.prevRotation=controller1.getWorldQuaternion(new THREE.Quaternion());
+ }
 }
 renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;updateControllerHands(dt);
-if(state.flying&&ball){ball.position.addScaledVector(velocity,dt);velocity.y-=9.81*dt;if(ball.position.z>4&&velocity.z>0){takePitch()}
+if(pitchRelease&&now>=pitchRelease)releasePitch();
+if(state.flying&&ball){ball.position.addScaledVector(velocity,dt);velocity.y-=9.81*dt;if(ball.position.z>=.65&&velocity.z>0&&!state.contact){takePitch()}
 else if(ball.position.y<.12){if(state.contact&&velocity.z<0&&ball.position.z<-75){state.hr++;advance(4)}else if(state.contact&&velocity.z<0){const distance=-ball.position.z;advance(distance>55?3:distance>32?2:1)}else if(!state.contact){takePitch()}else out();state.flying=false;if(ball){scene.remove(ball);ball=null}}}
-const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
+const session=renderer.xr.getSession();if(session){if(controller1.parent)trackedMelee(now,dt);
  const rightVelocity=controller1.getWorldPosition(new THREE.Vector3());const prevVelocity=controller1.userData.prevPosition;
  controller1.userData.releaseVelocity=prevVelocity?rightVelocity.clone().sub(prevVelocity).divideScalar(Math.max(dt,.008)).clampLength(0,14):new THREE.Vector3();controller1.userData.prevPosition=rightVelocity;
  const currentRot=controller1.getWorldQuaternion(new THREE.Quaternion());const previousRot=controller1.userData.prevRotation;
@@ -738,26 +814,29 @@ const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
  if(right){
   const b=right.gamepad.buttons;
   const grip=!!b[1]?.pressed;
-  edge('rightGrip',grip,()=>{if(!pickupKnife()&&!grabNPC(1))grabNearbyBat()});
+  edge('rightGrip',grip,()=>{if(state.mode==='BAT'&&weaponKind==='BAT')grabNearbyBat();else if(!pickupKnife()&&!grabNPC(1))grabNearbyBat()});
   if(!grip){releaseNPCGrip(1);if(batHeld)releaseHeldBat();if(knifeHeld)dropKnife()}weapon.visible=batHeld&&weaponKind==='BAT'&&importedBatReady;
-  edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BRAWL')switchWeapon();else takePitch()});
+  edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BAT')takePitch();else if(!batHeld&&!knifeHeld)switchWeapon()});
   edge('rightB',!!b[5]?.pressed,()=>{toggle()});
-  edge('rightTrigger',!!b[0]?.pressed,()=>{if(state.mode==='BRAWL')combatHit()});
+  edge('rightTrigger',!!b[0]?.pressed,()=>{if(state.mode==='BAT')takePitch()});
   if(batHeld&&weaponKind==='BAT'&&importedBatReady){
-   const tip=controller1.localToWorld(new THREE.Vector3(0,0,-.85));
+   const tip=controller1.localToWorld(new THREE.Vector3(0,0,-.92));
    physicalBatContact(now,dt);
    prevBatTip=tip.clone();
   }
  }
  if(left){
   const b=left.gamepad.buttons;
+  edge('leftTrigger',!!b[0]?.pressed,pitch);
   const leftGrip=!!b[1]?.pressed;
   edge('leftGrip',leftGrip,()=>grabNPC(0));
   if(!leftGrip)releaseNPCGrip(0);
   edge('leftX',!!b[4]?.pressed,()=>{document.getElementById('gameMode').click()});
   edge('leftY',!!b[5]?.pressed,()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF');announce('AI '+(aiOn?'ON':'OFF'))});
  }
-const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=Math.abs(a[2]||0)>Math.abs(a[0]||0)?a[2]:a[0],sy=Math.abs(a[3]||0)>Math.abs(a[1]||0)?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*3.6)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(false){buttonHeld=true}}}
+ if(!batHeld)prevBatTip=null;
+ updateLocomotion(left,right,dt);
+}
 // First-person player has no rendered body.
 enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}controller0.userData.gripDt=dt;controller1.userData.gripDt=dt;
 updateNPCGrips();physics.step(1/90,dt,5);
