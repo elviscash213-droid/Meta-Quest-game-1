@@ -148,6 +148,33 @@ const mixers=[];
 let playerAvatar=null;
 const athleteURLs=['https://models.codelove.in/models/sports-male-01.glb','https://models.codelove.in/models/sports-male-02.glb'];
 const athleteLoader=new GLTFLoader();athleteLoader.setMeshoptDecoder(MeshoptDecoder);
+// Pose imported skinned rigs even when their GLB lacks animation clips.
+// This modifies existing imported skeleton bones; it creates no visible geometry.
+const fallbackRigs=[];
+function setupFallbackPose(model){
+ const bones=[];model.traverse(o=>{if(o.isBone)bones.push(o)});
+ const find=(re)=>bones.find(b=>re.test(b.name.toLowerCase()));
+ const limb=(re)=>{const b=find(re);return b?{bone:b,base:b.quaternion.clone()}:null};
+ const limbs={
+  leftArm:limb(/left.*(upperarm|upper_arm|arm)|(?:upperarm|arm).*left|mixamorigleftarm/),
+  rightArm:limb(/right.*(upperarm|upper_arm|arm)|(?:upperarm|arm).*right|mixamorigrightarm/),
+  leftLeg:limb(/left.*(upleg|upperleg|thigh)|(?:upleg|thigh).*left/),
+  rightLeg:limb(/right.*(upleg|upperleg|thigh)|(?:upleg|thigh).*right/)
+ };
+ if(!limbs.leftArm&&!limbs.rightArm&&!limbs.leftLeg&&!limbs.rightLeg)return null;
+ const rig={limbs,phase:0,moving:false};
+ fallbackRigs.push(rig);return rig;
+}
+function updateFallbackPose(rig,dt){
+ rig.phase+=dt*(rig.moving?7:1.6);
+ const swing=rig.moving?Math.sin(rig.phase)*.48:Math.sin(rig.phase)*.015;
+ const pose=(entry,x,z)=>{if(!entry)return;entry.bone.quaternion.copy(entry.base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x,0,z)))};
+ // Shoulder adduction removes the imported T-pose; legs alternate when moving.
+ pose(rig.limbs.leftArm,-.12+swing*.65,-.95);
+ pose(rig.limbs.rightArm,-.12-swing*.65,.95);
+ pose(rig.limbs.leftLeg,swing,0);
+ pose(rig.limbs.rightLeg,-swing,0);
+}
 let athletesLoaded=0;
 athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
  import('three/addons/utils/SkeletonUtils.js').then(({clone})=>{
@@ -164,6 +191,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    model.rotation.y=Math.PI;
    p.group.add(model);p.model=model;
    p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
+   if(!gltf.animations.length)p.fallbackRig=setupFallbackPose(model);
    p.actions={};for(const clip of gltf.animations)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
    const idle=gltf.animations.find(c=>/idle|stand|breath|walk|run/i.test(c.name))||gltf.animations[0];
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
@@ -182,6 +210,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
     bodyAnchor.position.set(0,0,0);
     // Hide the player's own avatar in flat-screen preview and when the camera is inside it.
     playerAvatar={anchor:bodyAnchor,model:avatar,mixer:new THREE.AnimationMixer(avatar)};
+    if(!gltf.animations.length)playerAvatar.fallbackRig=setupFallbackPose(avatar);
     mixers.push(playerAvatar.mixer);
     const idle=gltf.animations.find(c=>/idle|stand|breath|walk/i.test(c.name))||gltf.animations[0];
     if(idle)playerAvatar.mixer.clipAction(idle).play();
@@ -191,7 +220,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
   modelStatus.textContent='IMPORTED RIGGED ATHLETES: '+athletesLoaded+'/2 models · 9 actors · animation clips '+gltf.animations.length;
  }).catch(e=>reportError('Athlete skeleton cloning',e));
 },undefined,e=>{modelStatus.textContent='ATHLETE IMPORT FAILED · '+url;reportError('Athlete import',e)}));
-function playCharacter(p,name){if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;if(!key)return;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
+function playCharacter(p,name){if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;if(!key)return;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
 
 let ball=null,velocity=new THREE.Vector3(),state={inning:1,half:'BOTTOM',home:0,away:0,hr:0,kos:0,outs:0,balls:0,strikes:0,bases:[false,false,false],mode:'BAT',flying:false,contact:false,gameOver:false},lastPitch=0,lastSwing=0;
 function count(){document.getElementById('count').textContent=state.half+' · '+state.balls+'-'+state.strikes+' · BASES '+state.bases.map(v=>v?'●':'○').join('')}
@@ -274,7 +303,7 @@ if(playerAvatar){playerAvatar.anchor.visible=renderer.xr.isPresenting;playerAvat
 enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}physics.step(1/60,dt,3);
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
-for(const mixer of mixers)mixer.update(dt);
+for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)updateFallbackPose(fallback,dt);
 if(renderer.xr.isPresenting){vrBoard.visible=true;updateVRBoard(now)}else vrBoard.visible=false;if(importedStadium.children[0]?.userData.mixer)importedStadium.children[0].userData.mixer.update(dt);renderer.render(scene,camera)});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});hud();
 </script></body></html>
