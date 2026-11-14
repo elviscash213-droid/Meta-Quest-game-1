@@ -183,7 +183,7 @@ function wound(p,force,point){
  p.injuries[limb]=Math.min(3,p.injuries[limb]+(force>=7?2:1));
  p.fractures=p.fractures||{};
  if(p.injuries[limb]>=2){p.fractures[limb]={severity:p.injuries[limb],time:performance.now(),healed:false};if(limb==='leftLeg'||limb==='rightLeg')p.staggerUntil=Math.max(p.staggerUntil||0,performance.now()+1100)}
- if(p.injuries[limb]>=2){p.health=Math.max(0,p.health-1);p.group.rotation.z+=limb==='leftLeg'?-.12:limb==='rightLeg'?.12:0}
+ if(p.injuries[limb]>=2){p.health=Math.max(0,p.health-1);p.group.rotation.z=THREE.MathUtils.clamp(p.group.rotation.z+(limb==='leftLeg'?-.06:limb==='rightLeg'?.06:0),-.15,.15)}
  return limb+' '+(p.injuries[limb]>=2?'FRACTURED':'INJURED');
 }
 // Imported CC0 photoreal blood atlas, rendered as physics-driven sprite droplets and ground decals.
@@ -197,11 +197,11 @@ const bloodTiles=[0,1,2,3].map(tile=>{
 function bloodStain(point){
  if(!bloodEnabled||!bloodAtlas.image)return;
  const mat=new THREE.SpriteMaterial({map:bloodTiles[Math.random()<.7?2:3],transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1});
- const decal=new THREE.Sprite(mat);decal.position.set(point.x,.025+Math.random()*.005,point.z);
- decal.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2);
+ const decal=new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({map:mat.map,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,side:THREE.DoubleSide}));mat.dispose();decal.position.set(point.x,.025+Math.random()*.005,point.z);
+ decal.rotation.set(-Math.PI/2,0,Math.random()*Math.PI*2);
  const size=.16+Math.random()*.34;decal.scale.set(size,size,1);
  scene.add(decal);bloodDecals.push(decal);
- if(bloodDecals.length>75){const old=bloodDecals.shift();scene.remove(old);old.material.dispose()}
+ if(bloodDecals.length>75){const old=bloodDecals.shift();scene.remove(old);old.geometry.dispose();old.material.dispose()}
 }
 function bloodBurst(point,direction,force){
  if(!bloodEnabled||!bloodAtlas.image||!point)return;
@@ -249,8 +249,9 @@ function buildRagdoll(p,impulse){
   const parent=parts.get(part.parentId);if(!parent)continue;
   const a=parent.body.position,b=part.body.position;
   // Anchor at the actual child joint, not the midpoint between limb origins.
-  const pivotA=b.vsub(a),pivotB=new CANNON.Vec3(0,0,0);
-  const damaged=part.id==='unused'?false:(id=>id.includes('_l')?(id.includes('arm')?p.fractures?.leftArm:p.fractures?.leftLeg):id.includes('_r')?(id.includes('arm')?p.fractures?.rightArm:p.fractures?.rightLeg):false)([...parts.entries()].find(([,value])=>value===part)?.[0]||'');
+  const pivotA=parent.body.pointToLocalFrame(b),pivotB=part.body.pointToLocalFrame(b);
+  const id=[...parts.entries()].find(([,value])=>value===part)?.[0]||'';
+  const damaged=id.endsWith('_l')?(id.includes('arm')?p.fractures?.leftArm:p.fractures?.leftLeg):id.endsWith('_r')?(id.includes('arm')?p.fractures?.rightArm:p.fractures?.rightLeg):false;
   const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,damaged?35:120);physics.addConstraint(joint);constraints.push(joint);
  }
  p.ragdoll=true;p.ragdollParts=parts;p.ragdollConstraints=constraints;p.fallTime=0;p.actionLockUntil=Infinity;
@@ -353,7 +354,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-persistent-fracture-ragdoll-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-ragdoll-joint-and-blood-decal-fixes-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
