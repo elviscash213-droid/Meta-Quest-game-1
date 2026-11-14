@@ -153,15 +153,15 @@ const athleteLoader=new GLTFLoader();athleteLoader.setMeshoptDecoder(MeshoptDeco
 const fallbackRigs=[];
 function setupFallbackPose(model){
  const bones=[];model.traverse(o=>{if(o.isBone)bones.push(o)});
- const find=(re)=>bones.find(b=>re.test(b.name.toLowerCase()));
+ const find=(re)=>bones.find(b=>re.test(b.name.toLowerCase().replace(/[^a-z0-9]/g,'')));
  const limb=(re)=>{const b=find(re);return b?{bone:b,base:b.quaternion.clone()}:null};
  const limbs={
-  leftArm:limb(/left.*(upperarm|upper_arm|arm)|(?:upperarm|arm).*left|mixamorigleftarm/),
-  rightArm:limb(/right.*(upperarm|upper_arm|arm)|(?:upperarm|arm).*right|mixamorigrightarm/),
-  leftLeg:limb(/left.*(upleg|upperleg|thigh)|(?:upleg|thigh).*left/),
-  rightLeg:limb(/right.*(upleg|upperleg|thigh)|(?:upleg|thigh).*right/)
+  leftArm:limb(/left.*(upperarm|arm|shoulder)|(?:upperarm|arm).*left|lupperarm|armleft/),
+  rightArm:limb(/right.*(upperarm|arm|shoulder)|(?:upperarm|arm).*right|rupperarm|armright/),
+  leftLeg:limb(/left.*(upleg|upperleg|thigh|leg)|(?:upleg|thigh|leg).*left|lthigh/),
+  rightLeg:limb(/right.*(upleg|upperleg|thigh|leg)|(?:upleg|thigh|leg).*right|rthigh/)
  };
- if(!limbs.leftArm&&!limbs.rightArm&&!limbs.leftLeg&&!limbs.rightLeg)return null;
+ if(!limbs.leftArm&&!limbs.rightArm&&!limbs.leftLeg&&!limbs.rightLeg){console.warn('Imported model armature not recognized:',bones.map(b=>b.name));return null;}
  const rig={limbs,phase:0,moving:false};
  fallbackRigs.push(rig);return rig;
 }
@@ -196,7 +196,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    const idle=gltf.animations.find(c=>/idle|stand|breath|walk|run/i.test(c.name))||gltf.animations[0];
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
    p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};
-   p.role=fieldRoles[i];if(!gltf.animations.length)reportError('Missing athlete animations',url+' has no animation clips; cannot animate T-pose without real imported clips');
+   p.role=fieldRoles[i];if(!gltf.animations.length&&!p.fallbackRig)reportError('Unrigged athlete',url+' has no animation clips or recognized armature');
   });
   if(variant===0&&!playerAvatar){
    const avatar=clone(gltf.scene);
