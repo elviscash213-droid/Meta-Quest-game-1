@@ -37,6 +37,8 @@ scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.Di
 // Imported-only visuals: no generated character or environment meshes.
 function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);return {group,health:8,alive:true,psyche:{courage:.25+Math.random()*.7,aggression:.2+Math.random()*.8,loyalty:Math.random(),fear:0,anger:0,trust:0,temperament:Math.random(),decisionAt:0,goal:'idle',memory:{lastHitAt:0,lastThreat:null},idleUntil:0}}}
 // Phase 1: authentic third-party CC0 stadium scene (not generated in this project).
+const stadiumColliders=[];
+function blockedByStadium(pos,radius=.34){return stadiumColliders.some(b=>pos.y<b.max.y&&pos.y+1.5>b.min.y&&pos.x>b.min.x-radius&&pos.x<b.max.x+radius&&pos.z>b.min.z-radius&&pos.z<b.max.z+radius)}
 const importedStadium=new THREE.Group();scene.add(importedStadium);
 const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
 const loadStatus=document.createElement('div');loadStatus.style.cssText='position:fixed;top:64px;left:12px;color:white;background:#071322aa;padding:5px 9px;border-radius:6px;font:12px system-ui';loadStatus.textContent='Loading imported stadium…';document.body.appendChild(loadStatus);
@@ -47,6 +49,19 @@ new GLTFLoader().load(assetUrl,gltf=>{
  const center=box.getCenter(new THREE.Vector3());
  stadium.position.set(-center.x,-box.min.y,-center.z);
  importedStadium.add(stadium);
+ stadium.updateMatrixWorld(true);
+ const bounds=new THREE.Box3().setFromObject(stadium),size=bounds.getSize(new THREE.Vector3());
+ // Keep all nine players inside the imported stadium's actual footprint.
+ const fieldRadius=Math.max(8,Math.min(size.x,size.z)*.37);
+ const factor=Math.min(1,fieldRadius/62);
+ for(let i=0;i<players.length;i++){
+  const [x,z]=playerPositions[i];players[i].group.position.set(x*factor,0,z*factor);initialPositions[i].set(x*factor,0,z*factor);
+ }
+ rig.position.set(.85*factor,0,.85*factor);
+ // Collision proxies use imported stadium meshes; no visible substitute geometry.
+ stadium.updateMatrixWorld(true);
+ stadiumColliders.length=0;
+ stadium.traverse(mesh=>{if(!mesh.isMesh)return;const name=(mesh.name+' '+(mesh.parent?.name||'')).toLowerCase();if(!/(wall|fence|rail|dugout|stand|bleacher|building|post|barrier)/.test(name))return;const b=new THREE.Box3().setFromObject(mesh);const d=b.getSize(new THREE.Vector3());if(d.x>.12&&d.z>.12&&d.y>.6&&d.x<70&&d.z<70)stadiumColliders.push(b)});
  
  loadStatus.textContent='IMPORTED STADIUM LOADED · NO GENERATED ASSETS';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
@@ -141,7 +156,10 @@ function enemyAI(dt,now){
    if(mind&&p.fractures&&(p.fractures.leftLeg||p.fractures.rightLeg)){mind.fear=Math.max(mind.fear,.25);if(distance>3&&mind.goal==='attack')mind.goal='circle'}
    const speed=fighting?(distance>7?3.2:1.9):2.3;
    if(p.staggerUntil&&now<p.staggerUntil){playCharacter(p,'hit');continue}
-   p.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*speed*slow));
+   const move=delta.normalize().multiplyScalar(Math.min(distance,dt*speed*slow));
+   const next=p.group.position.clone().add(move);
+   if(!blockedByStadium(next)&&!players.some(other=>other!==p&&other.alive&&other.group.position.distanceTo(next)<.65))p.group.position.copy(next);
+   else{const slideX=p.group.position.clone().add(new THREE.Vector3(move.x,0,0));const slideZ=p.group.position.clone().add(new THREE.Vector3(0,0,move.z));if(!blockedByStadium(slideX))p.group.position.copy(slideX);else if(!blockedByStadium(slideZ))p.group.position.copy(slideZ)}
    const heading=Math.atan2(delta.x,delta.z);
    p.group.rotation.y+=Math.atan2(Math.sin(heading-p.group.rotation.y),Math.cos(heading-p.group.rotation.y))*Math.min(1,dt*8);
    playCharacter(p,distance>4?'run':'walk');
@@ -384,7 +402,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-nine-defensive-baseball-positions-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-field-fit-stadium-collision-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
