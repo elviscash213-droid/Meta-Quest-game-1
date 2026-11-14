@@ -35,7 +35,7 @@ const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);came
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));renderer.xr.enabled=true;renderer.shadowMap.enabled=false;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
 scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(-30,65,25);scene.add(sun);
 // Imported-only visuals: no generated character or environment meshes.
-function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);return {group,health:3,alive:true}}
+function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);return {group,health:8,alive:true}}
 // Phase 1: authentic third-party CC0 stadium scene (not generated in this project).
 const importedStadium=new THREE.Group();scene.add(importedStadium);
 const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
@@ -174,12 +174,12 @@ function buildRagdoll(p,impulse){
   const a=parent.body.position,b=part.body.position;
   const midpoint=new CANNON.Vec3((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
   const pivotA=midpoint.vsub(a),pivotB=midpoint.vsub(b);
-  physics.addConstraint(new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,1e5));
+  physics.addConstraint(new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,250));
  }
  p.ragdoll=true;p.ragdollParts=parts;p.fallTime=0;p.actionLockUntil=Infinity;
  p.mixer?.stopAllAction();
  const center=parts.get('chest')||parts.get('pelvis')||parts.values().next().value;
- center.body.applyImpulse(new CANNON.Vec3(impulse.x*12,Math.max(10,impulse.y*12),impulse.z*12),center.body.position);
+ center.body.applyImpulse(new CANNON.Vec3(THREE.MathUtils.clamp(impulse.x*2,-16,16),Math.max(3,Math.min(9,impulse.y*2)),THREE.MathUtils.clamp(impulse.z*2,-16,16)),center.body.position);
  announce('NPC RAGDOLL');
 }
 function hitEffect(){} // Await imported impact effect.
@@ -194,10 +194,10 @@ function combatHit(){if(state.gameOver)return;
  const force=weaponKind==='BAT'?8:4;best.lastAttack=performance.now()+1400;best.health-=weaponKind==='BAT'?2:1;
  const pos=best.group.position.clone().add(new THREE.Vector3(0,1.4,0));hitEffect(pos);const damage=wound(best,force,pos);bloodBurst(pos,dir,force);if(best.injuries.leftLeg>=2||best.injuries.rightLeg>=2)best.group.position.y=-.22;
  if(best.health<=0){best.alive=false;state.kos++;buildRagdoll(best,dir.clone().multiplyScalar(force).add(new THREE.Vector3(0,3,0)));announce('KNOCKDOWN!');hud()}
- else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
+ else{best.group.position.addScaledVector(dir,.25);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-imported-xr-hands-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-ragdoll-stability-hitfix-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -413,12 +413,13 @@ function trackedMelee(now,dt){
  if(previous&&speed>(holdingBat?1.6:1.1)&&now-lastMeleeContact>380){
   for(const p of players){
    if(!p.alive||!p.model)continue;
-   const reach=holdingBat?.43:.32;
+   const reach=holdingBat?.48:.4;
    // Imported skeletal bones provide moving anatomical hit targets.
    const joints=[];p.model.traverse(o=>{if(o.isBone&&/(head|neck|spine|pelvis|chest|upperarm|thigh)/i.test(o.name))joints.push(o)});
-   const centers=joints.length?joints.map(b=>b.getWorldPosition(new THREE.Vector3())):[
-    p.group.position.clone().add(new THREE.Vector3(0,1.25,0))
-   ];
+   const centers=joints.map(b=>b.getWorldPosition(new THREE.Vector3()));
+   // Always include anatomical fallback targets for rigs with unusual bone names.
+   for(const y of [.75,1.15,1.5])centers.push(p.group.localToWorld(new THREE.Vector3(0,y,0)));
+
    if(!centers.some(center=>segmentDistanceSquared(center,previous,tip)<reach*reach))continue;
    lastMeleeContact=now;
    state.mode='BRAWL';hud();
@@ -473,6 +474,15 @@ for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)up
 for(const p of players){
  if(!p.ragdollParts)continue;
  p.fallTime+=dt;
+ // Prevent excessive velocity and perpetual ragdoll jitter after impact.
+ for(const part of p.ragdollParts.values()){
+  const b=part.body;
+  const speed=Math.hypot(b.velocity.x,b.velocity.y,b.velocity.z);
+  if(speed>9)b.velocity.scale(9/speed,b.velocity);
+  const spin=Math.hypot(b.angularVelocity.x,b.angularVelocity.y,b.angularVelocity.z);
+  if(spin>6)b.angularVelocity.scale(6/spin,b.angularVelocity);
+  if(p.fallTime>4){b.velocity.scale(.85,b.velocity);b.angularVelocity.scale(.75,b.angularVelocity)}
+ }
  // Update imported skeleton bones from constrained Cannon physics bodies.
  for(const {bone,body} of p.ragdollParts.values()){
   const parent=bone.parent;
