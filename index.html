@@ -178,7 +178,7 @@ function updateFallbackPose(rig,dt){
 // Licensed third-party MIT skeleton-only animation imports for the same Biped rig.
 const motionFiles={idle:'m_idle_neutral_01.glb',walk:'m_walk_neutral_01.glb',run:'m_run_neutral_01.glb'};
 const sharedMotions={};
-function attachSharedMotions(p){if(!p?.model||!p.mixer)return;if(p.fallbackRig){const i=fallbackRigs.indexOf(p.fallbackRig);if(i>=0)fallbackRigs.splice(i,1);p.fallbackRig=null}p.actions=p.actions||{};p.clips=p.clips||{};for(const [name,clip] of Object.entries(sharedMotions)){p.actions[name]=p.mixer.clipAction(clip);p.clips[name]=name}if(p.actions.idle){p.currentAction?.stop();p.currentAction=p.actions.idle;p.currentAction.reset().play()}}
+function attachSharedMotions(p){if(!p?.model||!p.mixer||!Object.keys(sharedMotions).length)return;if(p.fallbackRig){const i=fallbackRigs.indexOf(p.fallbackRig);if(i>=0)fallbackRigs.splice(i,1);p.fallbackRig=null}p.actions=p.actions||{};p.clips=p.clips||{};for(const [name,clip] of Object.entries(sharedMotions)){const action=p.mixer.clipAction(clip);p.actions[name]=action;p.clips[name]=name}if(p.actions.idle){p.currentAction?.stop();p.currentAction=p.actions.idle;p.currentAction.reset().play()}}
 Promise.all(Object.entries(motionFiles).map(async([name,file])=>{
  try{
   const motion=await athleteLoader.loadAsync('https://models.codelove.in/animations/'+file);
@@ -187,7 +187,7 @@ Promise.all(Object.entries(motionFiles).map(async([name,file])=>{
  }catch(e){reportError('Imported motion '+name,e)}
 })).then(()=>{
  for(const p of [...players,...(playerAvatar?[playerAvatar]:[])])attachSharedMotions(p);
- modelStatus.textContent='IMPORTED MOTIONS: '+Object.keys(sharedMotions).join(', ')+' · '+players.length+' NPCs';
+ modelStatus.textContent='IMPORTED MOTIONS: '+(Object.keys(sharedMotions).join(', ')||'NONE — FALLBACK ACTIVE')+' · '+players.length+' NPCs';
 });
 let athletesLoaded=0;
 athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
@@ -204,7 +204,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    model.position.set(-box.getCenter(new THREE.Vector3()).x*scale,-box.min.y*scale,-box.getCenter(new THREE.Vector3()).z*scale);
    model.rotation.y=Math.PI;
    p.group.add(model);p.model=model;
-   if(Object.keys(sharedMotions).length){p.fallbackRig=null;}
+   // Attach motion clips only after the character mixer has been created.
    p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
    if(!gltf.animations.length&&!Object.keys(sharedMotions).length)p.fallbackRig=setupFallbackPose(model);
    p.actions={};for(const clip of gltf.animations)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
@@ -232,7 +232,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    }
   }
   athletesLoaded++;
-  modelStatus.textContent='IMPORTED RIGGED ATHLETES: '+athletesLoaded+'/2 models · 9 actors · animation clips '+gltf.animations.length;
+  modelStatus.textContent='ATHLETES '+athletesLoaded+'/2 · EXTERNAL MOTIONS '+(Object.keys(sharedMotions).join(', ')||'LOADING')+' · '+players.length+' ACTORS';
  }).catch(e=>reportError('Athlete skeleton cloning',e));
 },undefined,e=>{modelStatus.textContent='ATHLETE IMPORT FAILED · '+url;reportError('Athlete import',e)}));
 function playCharacter(p,name){if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;if(!key)return;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
