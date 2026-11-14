@@ -241,12 +241,31 @@ function buildRagdoll(p,impulse){
   const bone=bones.find(b=>re.test(b.name));if(!bone)continue;
   const world=bone.getWorldPosition(new THREE.Vector3());
   const quat=bone.getWorldQuaternion(new THREE.Quaternion());
-  // Colliders follow the imported skeletal limb proportions, rather than using spheres for every part.
-  const elongated=/^(upperarm|lowerarm|thigh|calf)/.test(id);
-  const segmentLength=id.startsWith('thigh')?.39:id.startsWith('calf')?.37:id.startsWith('upperarm')?.27:id.startsWith('lowerarm')?.25:0;
-  const shape=elongated?new CANNON.Cylinder(radius,radius,segmentLength,8):id==='chest'||id==='pelvis'?new CANNON.Box(new CANNON.Vec3(id==='chest'?.22:.19,id==='chest'?.19:.13,.13)):new CANNON.Sphere(radius);
-  const body=new CANNON.Body({mass,shape,linearDamping:.18,angularDamping:.46,collisionFilterGroup:2,collisionFilterMask:1});
+  // Place limb colliders between real imported skeleton joints.
+  const distalNames={
+   upperarm_l:/^(lowerarm_l|leftforearm|leftlowerarm)$/i,
+   lowerarm_l:/^(hand_l|lefthand)$/i,
+   upperarm_r:/^(lowerarm_r|rightforearm|rightlowerarm)$/i,
+   lowerarm_r:/^(hand_r|righthand)$/i,
+   thigh_l:/^(calf_l|leftleg|leftcalf)$/i,
+   calf_l:/^(foot_l|leftfoot)$/i,
+   thigh_r:/^(calf_r|rightleg|rightcalf)$/i,
+   calf_r:/^(foot_r|rightfoot)$/i
+  };
+  const distal=distalNames[id]&&bones.find(b=>distalNames[id].test(b.name));
+  const end=distal?.getWorldPosition(new THREE.Vector3());
+  const direction=end?end.clone().sub(world):null;
+  const elongated=!!direction&&direction.length()>.08;
+  const segmentLength=elongated?direction.length():0;
+  const shape=elongated?new CANNON.Cylinder(radius,radius,segmentLength*.92,8):id==='chest'||id==='pelvis'?new CANNON.Box(new CANNON.Vec3(id==='chest'?.22:.19,id==='chest'?.19:.13,.13)):new CANNON.Sphere(radius);
+  const body=new CANNON.Body({mass,linearDamping:.18,angularDamping:.46,collisionFilterGroup:2,collisionFilterMask:1});
   body.position.set(world.x,world.y,world.z);body.quaternion.set(quat.x,quat.y,quat.z,quat.w);
+  if(elongated){
+   const localDir=direction.clone().normalize().applyQuaternion(quat.clone().invert());
+   const shapeRotation=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),localDir);
+   const shapeOffset=localDir.clone().multiplyScalar(segmentLength*.5);
+   body.addShape(shape,new CANNON.Vec3(shapeOffset.x,shapeOffset.y,shapeOffset.z),new CANNON.Quaternion(shapeRotation.x,shapeRotation.y,shapeRotation.z,shapeRotation.w));
+  }else body.addShape(shape);
   physics.addBody(body);parts.set(id,{bone,body,parentId,restPosition:bone.position.clone(),restQuaternion:bone.quaternion.clone()});
  }
  if(parts.size<6){for(const part of parts.values())physics.removeBody(part.body);reportError('Ragdoll rig missing limb bones',p.role||'NPC');return}
@@ -363,7 +382,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-ragdoll-limb-colliders-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-skeleton-fitted-ragdoll-colliders-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
