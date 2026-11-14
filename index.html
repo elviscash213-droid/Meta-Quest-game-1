@@ -143,7 +143,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-animated-import-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-motion-stabilized-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -222,11 +222,12 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    model.position.set(-box.getCenter(new THREE.Vector3()).x*scale,-box.min.y*scale,-box.getCenter(new THREE.Vector3()).z*scale);
    model.rotation.y=Math.PI;
    p.group.add(model);p.model=model;
+   model.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.castShadow=true}});
    // Attach motion clips only after the character mixer has been created.
    p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
    if(!gltf.animations.length)p.fallbackRig=setupFallbackPose(model);
-   p.actions={};for(const clip of gltf.animations){const action=p.mixer.clipAction(clip);p.actions[clip.name]=action;p.actions[clip.name.toLowerCase()]=action;}
-   const idle=gltf.animations.find(c=>/idle|stand|breath|walk|run/i.test(c.name))||gltf.animations[0];
+   p.actions={};for(const clip of gltf.animations.filter(c=>!/tpose|t-pose|bindpose/i.test(c.name))){const action=p.mixer.clipAction(clip);p.actions[clip.name]=action;p.actions[clip.name.toLowerCase()]=action;}
+   const idle=gltf.animations.find(c=>/^(idle|stand|breath)$/i.test(c.name))||gltf.animations.find(c=>/idle|stand|breath/i.test(c.name))||gltf.animations.find(c=>!/tpose|t-pose|bindpose/i.test(c.name));
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
    p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};if(!gltf.animations.length)attachSharedMotions(p);
    p.role=fieldRoles[i];if(!gltf.animations.length&&!p.fallbackRig)console.warn('No recognized animation armature for',url);
@@ -260,7 +261,7 @@ function playCharacter(p,name){
  const requested=p.clips?.[name]||name;
  const direct=p.actions[requested]||p.actions[requested.toLowerCase()];
  const key=Object.keys(p.actions).find(k=>aliases[name]?.test(k));
- const next=direct||p.actions[key]||p.actions.idle;
+ const next=direct||p.actions[key]||p.actions.idle||p.actions.Idle;
  if(!next||next===p.currentAction)return;
  next.enabled=true;next.reset().fadeIn(.2).play();
  p.currentAction?.fadeOut(.2);p.currentAction=next;
