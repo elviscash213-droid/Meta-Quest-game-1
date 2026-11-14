@@ -94,7 +94,7 @@ function enemyAI(dt,now){
    playCharacter(p,distance>4?'run':'walk');
   }else playCharacter(p,'idle');
   if(fighting&&p.group.position.distanceTo(target)<1.8&&now-(p.lastAttack||0)>2600){
-   p.lastAttack=now;playerHP=Math.max(0,playerHP-7);enemyHits++;
+   p.lastAttack=now;playCharacter(p,'attack');playerHP=Math.max(0,playerHP-7);enemyHits++;
    beep(105,.13,'sawtooth');announce('NPC PUNCH · HEALTH '+playerHP);
    if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
   }
@@ -127,7 +127,7 @@ function wound(p,force,point){
 }
 function bloodBurst(){} // Await imported effect assets.
 function bloodStain(){} // Await imported decals.
-function buildRagdoll(p,impulse){if(p.ragdoll)return;p.ragdoll=true;p.fallVelocity=impulse.clone().multiplyScalar(.13);p.fallAngular=(Math.random()>.5?1:-1)*2.8;p.fallTime=0;p.group.visible=true;playCharacter(p,'idle');announce('PLAYER DOWN')}
+function buildRagdoll(p,impulse){if(p.ragdoll)return;p.ragdoll=true;p.fallVelocity=impulse.clone().multiplyScalar(.13);p.fallAngular=(Math.random()>.5?1:-1)*2.8;p.fallTime=0;p.group.visible=true;playCharacter(p,'death');announce('PLAYER DOWN')}
 function hitEffect(){} // Await imported impact effect.
 function combatHit(){if(state.gameOver)return;
  const now=performance.now();if(now-lastCombat<280)return;lastCombat=now;
@@ -143,11 +143,11 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-motion-stabilized-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-7clip-soldier-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
-const athleteURLs=['https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb'];
+const athleteURLs=['https://www.shanebrumback.com/models/soldier_rigged.glb'];
 const athleteLoader=new GLTFLoader();athleteLoader.setMeshoptDecoder(MeshoptDecoder);
 // Pose imported skinned rigs even when their GLB lacks animation clips.
 // This modifies existing imported skeleton bones; it creates no visible geometry.
