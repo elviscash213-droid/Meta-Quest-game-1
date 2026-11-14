@@ -97,6 +97,8 @@ function registerThreat(victim,intensity,now){
  mind.anger=Math.min(2,mind.anger+intensity*.32);
  mind.grudge=Math.min(2,mind.grudge+intensity*.24);
  mind.lastThreatAt=now;mind.decisionAt=0;
+ mind.lastKnown=new THREE.Vector3().setFromMatrixPosition((renderer.xr.isPresenting?renderer.xr.getCamera():camera).matrixWorld).setY(0);
+ mind.lastSeen=now;
  const victimIndex=players.indexOf(victim);
  for(let i=0;i<players.length;i++){
   const ally=players[i];if(ally===victim||!ally.alive)continue;
@@ -111,9 +113,35 @@ function registerThreat(victim,intensity,now){
 const initialPositions=playerPositions.map(([x,z])=>new THREE.Vector3(x,0,z));
 document.getElementById('aiToggle').onclick=()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF')};
 document.getElementById('gameMode').onclick=()=>{ruleMode=ruleMode==='CHAOS'?'BASEBALL':'CHAOS';document.getElementById('gameMode').textContent='RULES: '+ruleMode;announce(ruleMode+' RULES · FIGHTING ALWAYS AVAILABLE')};
+const sightRay=new THREE.Ray();
+const sightHit=new THREE.Vector3();
+function canSeeThreat(p,target,range){
+ sightRay.origin.copy(p.group.position).y+=1.55;
+ sightRay.direction.copy(target).sub(sightRay.origin);
+ const distance=sightRay.direction.length();
+ if(distance>range||distance<.01)return false;
+ sightRay.direction.divideScalar(distance);
+ const yaw=p.group.rotation.y;
+ const forward=sightRay.direction.x*Math.sin(yaw)+sightRay.direction.z*Math.cos(yaw);
+ if(distance>3&&forward<-.28)return false;
+ return !stadiumColliders.some(box=>!box.containsPoint(sightRay.origin)&&
+  sightRay.intersectBox(box,sightHit)&&sightHit.distanceToSquared(sightRay.origin)<distance*distance);
+}
+function chooseReaction(p,now,seen){
+ const mind=p.psyche;
+ const wary=mind.fear-mind.courage+(p.health<=3?.45:0);
+ if(wary>.22&&mind.lastKnown)return 'flee';
+ if(seen)return mind.aggression+mind.anger+mind.grudge*.3>.73?'attack':'circle';
+ const downed=players[mind.socialTarget];
+ if(downed?.ragdollParts&&mind.loyalty>.55&&now-mind.lastSeen>2200)return 'check teammate';
+ if(mind.lastKnown&&now-mind.lastSeen<6500)return 'search';
+ return 'hold';
+}
 function enemyAI(dt,now){
  if(!aiOn||state.gameOver)return;
- const target=camera.getWorldPosition(new THREE.Vector3());target.y=0;
+ const view=renderer.xr.isPresenting?renderer.xr.getCamera():camera;
+ const eye=new THREE.Vector3().setFromMatrixPosition(view.matrixWorld);
+ const target=eye.clone().setY(0);
  const fighting=state.mode==='BRAWL';
  let nearest=null,nearestDistance=Infinity;
  for(let i=0;i<players.length;i++){
@@ -121,38 +149,51 @@ function enemyAI(dt,now){
   const home=initialPositions[i];
   const destination=home.clone();
   const mind=p.psyche;
-  if(mind){mind.alertness=THREE.MathUtils.clamp((mind.alertness||0)-dt*.04,0,1);mind.lastSeen= mind.lastSeen||0;const seen=target.distanceTo(p.group.position)<28;if(seen){mind.lastSeen=now;mind.lastKnown=target.clone();mind.alertness=Math.min(1,mind.alertness+dt*.65)}}
-  if(mind&&mind.goal==='flee'&&mind.lastThreatAt&&now-mind.lastThreatAt>11000)mind.goal='circle';
-  if(mind){mind.fear=Math.max(0,mind.fear-dt*.025);mind.anger=Math.max(0,mind.anger-dt*.012);mind.grudge=Math.max(0,mind.grudge-dt*.001)}
-  // During a live hit, the nearest fielder pursues the actual ball.
+  let seen=false;
+  if(fighting){
+   if(now>=(mind.senseAt||0)){
+    mind.senseAt=now+130;
+    mind.seesPlayer=canSeeThreat(p,eye,ruleMode==='CHAOS'?34:23);
+    if(mind.seesPlayer){
+     mind.lastSeen=now;mind.lastKnown=target.clone();
+    }
+   }
+   seen=mind.seesPlayer;
+   mind.fear=Math.max(0,mind.fear-dt*.055);
+   mind.anger=Math.max(0,mind.anger-dt*.035);
+   mind.grudge=Math.max(0,mind.grudge-dt*.005);
+   if(now>=mind.decisionAt){
+    mind.goal=chooseReaction(p,now,seen);
+    mind.decisionAt=now+280+mind.temperament*350;
+   }
+   const known=mind.lastKnown;
+   if(mind.goal==='flee'&&known){
+    const away=p.group.position.clone().sub(known).setY(0).normalize();
+    destination.copy(p.group.position).addScaledVector(away,6);
+   }else if(mind.goal==='check teammate'){
+    const fallen=players[mind.socialTarget]?.ragdollParts?.get('pelvis');
+    if(fallen){
+     destination.copy(fallen.body.position).setY(0);
+     if(p.group.position.distanceTo(destination)<1.35){
+      destination.copy(p.group.position);
+      playCharacter(p,'check');
+     }
+    }
+   }else if(mind.goal==='search'&&known){
+    destination.copy(known);
+   }else if(known&&(mind.goal==='attack'||mind.goal==='circle')){
+    const away=p.group.position.clone().sub(known).setY(0).normalize();
+    const distance=mind.goal==='attack'?1.8:3.2;
+    destination.copy(known).addScaledVector(away,distance);
+    if(mind.goal==='circle'){
+     const side=i%2===0?1:-1;
+     destination.addScaledVector(new THREE.Vector3(away.z,0,-away.x),side*1.25);
+    }
+   }
+  }
   if(!fighting&&state.contact&&state.flying&&ball&&i>1&&isFairBall(ball.position)){
    const distanceToBall=p.group.position.distanceTo(ball.position);
    if(distanceToBall<nearestDistance){nearest=p;nearestDistance=distanceToBall}
-  }
-  if(fighting&&mind&&now>mind.decisionAt){
-   const nearbyFriends=players.filter(other=>other!==p&&other.alive&&other.group.position.distanceTo(p.group.position)<7).length;
-   const panic=mind.fear-mind.courage-nearbyFriends*.025+(mind.grabbedUntil>now?.3:0);
-   const knowsPlayer=now-mind.lastSeen<6500;
-   if(!knowsPlayer&&mind.goal!=='flee'){mind.goal='search';mind.decisionAt=now+1800;continue}
-   mind.goal=panic>.18?'flee':mind.anger+mind.aggression+mind.grudge*.3>.75?'attack':'circle';
-   if(mind.socialTarget>=0&&players[mind.socialTarget]?.alive&&mind.relationships[mind.socialTarget]>.5&&mind.anger>.45)mind.goal='defend';
-   mind.decisionAt=now+1100+Math.random()*1700;
-  }
-  if(fighting){
-   // Engage across the field instead of waiting until the player walks within 9 metres.
-   const d=target.distanceTo(p.group.position);
-   if(d<(ruleMode==='CHAOS'?85:24)){
-    destination.copy(target);
-    if(mind?.goal==='attack'&&d<2.1)destination.copy(p.group.position);
-    if(mind?.goal==='circle'&&d<3.5)destination.copy(p.group.position);
-    if(mind?.goal==='search'&&mind.lastKnown)destination.copy(mind.lastKnown);
-    if(mind?.goal==='defend'&&mind.socialTarget>=0){const ally=players[mind.socialTarget];if(ally)destination.copy(ally.group.position).lerp(target,.6)}
-    if(mind?.goal==='flee'){const retreat=p.group.position.clone().sub(target).setY(0);if(retreat.lengthSq()<.01)retreat.set(0,0,1);destination.copy(p.group.position).addScaledVector(retreat.normalize(),7)}
-    else if(mind?.goal==='circle'){const tangent=new THREE.Vector3(-(target.z-p.group.position.z),0,target.x-p.group.position.x).normalize();destination.addScaledVector(tangent,2.5)}
-    const away=p.group.position.clone().sub(target).setY(0);
-    if(away.lengthSq()<.01)away.set(0,0,1);
-    if(mind?.goal!=='flee'&&d>2.1)destination.addScaledVector(away.normalize(),1.55+(i%3)*.35);
-   }
   }
   if(!fighting&&state.contact&&state.flying&&ball)continue;
   const delta=destination.sub(p.group.position);delta.y=0;
@@ -160,7 +201,7 @@ function enemyAI(dt,now){
   if(distance>.45){
    const slow=(p.injuries?.leftLeg>=2||p.injuries?.rightLeg>=2)?.3:1;
    if(mind&&p.fractures&&(p.fractures.leftLeg||p.fractures.rightLeg)){mind.fear=Math.max(mind.fear,.25);if(distance>3&&mind.goal==='attack')mind.goal='circle'}
-   const speed=fighting?(distance>7?3.2:1.9):2.3;
+   const speed=fighting?(mind.goal==='flee'?3.6:distance>7?3.2:1.9):2.3;
    if(p.staggerUntil&&now<p.staggerUntil){playCharacter(p,'hit');continue}
    const move=delta.normalize().multiplyScalar(Math.min(distance,dt*speed*slow));
    const next=p.group.position.clone().add(move);
@@ -168,18 +209,18 @@ function enemyAI(dt,now){
    else{const slideX=p.group.position.clone().add(new THREE.Vector3(move.x,0,0));const slideZ=p.group.position.clone().add(new THREE.Vector3(0,0,move.z));if(!blockedByStadium(slideX))p.group.position.copy(slideX);else if(!blockedByStadium(slideZ))p.group.position.copy(slideZ)}
    const heading=Math.atan2(delta.x,delta.z);
    p.group.rotation.y+=Math.atan2(Math.sin(heading-p.group.rotation.y),Math.cos(heading-p.group.rotation.y))*Math.min(1,dt*8);
-   playCharacter(p,distance>4?'run':'walk');
-  }else {playCharacter(p,'idle');if(fighting&&mind?.goal!=='flee'){const face=target.clone().sub(p.group.position);const heading=Math.atan2(face.x,face.z);p.group.rotation.y+=Math.atan2(Math.sin(heading-p.group.rotation.y),Math.cos(heading-p.group.rotation.y))*Math.min(1,dt*6)}}
+   playCharacter(p,speed>3?'run':'walk');
+  }else {if(!fighting||mind.goal!=='check teammate')playCharacter(p,'idle');if(fighting&&mind.lastKnown&&mind.goal!=='flee'){const face=mind.lastKnown.clone().sub(p.group.position);const heading=Math.atan2(face.x,face.z);p.group.rotation.y+=Math.atan2(Math.sin(heading-p.group.rotation.y),Math.cos(heading-p.group.rotation.y))*Math.min(1,dt*6)}}
   // Attacks are telegraphed; damage lands only if the player remains in range.
   if(p.pendingAttackAt&&now>=p.pendingAttackAt){
    p.pendingAttackAt=0;
-   if(fighting&&p.alive&&p.group.position.distanceTo(target)<2.25&&now-(mind?.lastSeen||0)<2500){
+   if(fighting&&p.alive&&p.group.position.distanceTo(target)<2.25&&canSeeThreat(p,eye,3)){
     playerHP=Math.max(0,playerHP-7);enemyHits++;
     beep(105,.13,'sawtooth');announce('NPC HIT · HEALTH '+playerHP);hud();
     if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
    }
   }
-  if(fighting&&now-(mind?.lastSeen||0)<2500&&(mind?.goal==='attack'||mind?.goal==='defend')&&!p.pendingAttackAt&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>2600){
+  if(fighting&&seen&&mind.goal==='attack'&&!players.some(other=>other!==p&&other.pendingAttackAt>now)&&!p.pendingAttackAt&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>1900+mind.temperament*1000){
    p.lastAttack=now;p.pendingAttackAt=now+550;
    playCharacter(p,'attack');
   }
@@ -443,7 +484,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='quest-two-handed-grabs-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='quest-npc-awareness-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -545,7 +586,7 @@ function playCharacter(p,name){
  if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';
  if((name==='idle'||name==='walk'||name==='run')&&p.actionLockUntil&&performance.now()<p.actionLockUntil)return;
  if(!p.mixer||!p.actions)return;
- const aliases={field:/^(baseball_catch|catch|block)$/i,throw:/^(baseball_pitch|pitch|grenade_throw)$/i,idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|fire|shoot)/i,hit:/^(hit|hurt|react|stagger|impact)/i,death:/^(death|die|dead|fall|defeat)/i};
+ const aliases={check:/^(kneel|crouch_reload)$/i,field:/^(baseball_catch|catch|block)$/i,throw:/^(baseball_pitch|pitch|grenade_throw)$/i,idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|fire|shoot)/i,hit:/^(hit|hurt|react|stagger|impact)/i,death:/^(death|die|dead|fall|defeat)/i};
  const requested=p.clips?.[name]||name;
  const direct=p.actions[requested]||p.actions[requested.toLowerCase()];
  const key=Object.keys(p.actions).find(k=>aliases[name]?.test(k));
