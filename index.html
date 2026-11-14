@@ -80,20 +80,26 @@ function enemyAI(dt,now){
    const distanceToBall=p.group.position.distanceTo(ball.position);
    if(distanceToBall<nearestDistance){nearest=p;nearestDistance=distanceToBall}
   }
-  if(fighting&&i%3!==0){
+  if(fighting){
+   // Engage across the field instead of waiting until the player walks within 9 metres.
    const d=target.distanceTo(p.group.position);
-   if(d<9){destination.copy(target);const away=p.group.position.clone().sub(target).setY(0);if(away.lengthSq()<.01)away.set(0,0,1);destination.addScaledVector(away.normalize(),2.3)}
+   if(d<85){
+    destination.copy(target);
+    const away=p.group.position.clone().sub(target).setY(0);
+    if(away.lengthSq()<.01)away.set(0,0,1);
+    destination.addScaledVector(away.normalize(),1.55+(i%3)*.35);
+   }
   }
   const delta=destination.sub(p.group.position);delta.y=0;
   const distance=delta.length();
   if(distance>.45){
    const slow=(p.injuries?.leftLeg>=2||p.injuries?.rightLeg>=2)?.3:1;
-   const speed=fighting?1.6:2.3;
+   const speed=fighting?(distance>7?3.8:2.3):2.3;
    p.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*speed*slow));
    p.group.lookAt(p.group.position.x+delta.x,0,p.group.position.z+delta.z);
    playCharacter(p,distance>4?'run':'walk');
   }else playCharacter(p,'idle');
-  if(fighting&&p.group.position.distanceTo(target)<1.8&&now-(p.lastAttack||0)>2600){
+  if(fighting&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>2600){
    p.lastAttack=now;playCharacter(p,'attack');playerHP=Math.max(0,playerHP-7);enemyHits++;
    beep(105,.13,'sawtooth');announce('NPC PUNCH · HEALTH '+playerHP);
    if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
@@ -155,7 +161,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-no-robot-strict-rig-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-brawl-ai-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -309,7 +315,7 @@ if(renderer.xr.isPresenting){announce('SWING THE TRACKED BAT');return}
 const d=ball.position.distanceTo(new THREE.Vector3(0,1.5,0));if(d<.65){velocity.set((Math.random()-.5)*9,12+Math.random()*7,-19-Math.random()*17);state.contact=true;announce('CRACK!')}else{strike();announce('SWING AND MISS')}}
 function switchWeapon(){state.mode='BRAWL';weaponKind=weaponKind==='BAT'?'FISTS':'BAT';document.getElementById('weaponSwitch').textContent='WEAPON: '+weaponKind;weapon.visible=weaponKind==='BAT'&&batHeld;announce(weaponKind+' EQUIPPED')}
 document.getElementById('weaponSwitch').onclick=switchWeapon;
-function toggle(){state.mode=state.mode==='BAT'?'BRAWL':'BAT';hud();announce(state.mode+' MODE')}
+function toggle(){state.mode=state.mode==='BAT'?'BRAWL':'BAT';hud();announce(state.mode==='BRAWL'?'BRAWL · NPCS APPROACHING':'BASEBALL MODE')}
 document.getElementById('pitch').onclick=pitch;document.getElementById('take').onclick=takePitch;document.getElementById('swing').onclick=swing;document.getElementById('mode').onclick=toggle;document.getElementById('reset').onclick=()=>location.reload();
 const controller0=renderer.xr.getController(0),controller1=renderer.xr.getController(1);rig.add(controller0,controller1);
 // Quest controls: left trigger pitches; right trigger attacks only in fist mode.
