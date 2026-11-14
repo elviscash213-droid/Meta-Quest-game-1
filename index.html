@@ -259,10 +259,9 @@ let weaponKind='BAT';let lastCombat=0;const impactPoint=new THREE.Vector3(),impa
 function injuryLabel(p){if(!p.injuries)return '';return Object.entries(p.injuries).filter(([k,v])=>v>0).map(([k,v])=>k.toUpperCase()+' '+(v>=2?'FRACTURED':'BRUISED')).join(' · ')}
 function wound(p,force,point){
  if(!p.injuries)p.injuries={leftArm:0,rightArm:0,leftLeg:0,rightLeg:0,torso:0};
- const keys=Object.keys(p.injuries);const relative=p.group.worldToLocal(point.clone());
- let limb=relative.y<.9?(relative.x<0?'leftLeg':'rightLeg'):relative.y>1.8?'torso':(relative.x<0?'leftArm':'rightArm');
- if(!keys.includes(limb))limb='torso';
- p.injuries[limb]=Math.min(3,p.injuries[limb]+(force>=7?2:1));
+ const relative=p.group.worldToLocal(point.clone());
+ const limb=relative.y<.9?(relative.x<0?'leftLeg':'rightLeg'):relative.y>1.8?'torso':(relative.x<0?'leftArm':'rightArm');
+ p.injuries[limb]=Math.min(3,(p.injuries[limb]||0)+(force>=7?2:1));
  p.fractures=p.fractures||{};
  if(p.injuries[limb]>=2){p.fractures[limb]={severity:p.injuries[limb],time:performance.now(),healed:false};if(limb==='leftLeg'||limb==='rightLeg')p.staggerUntil=Math.max(p.staggerUntil||0,performance.now()+1100)}
  if(p.injuries[limb]>=2){p.health=Math.max(0,p.health-1);p.group.rotation.z=THREE.MathUtils.clamp(p.group.rotation.z+(limb==='leftLeg'?-.06:limb==='rightLeg'?.06:0),-.15,.15)}
@@ -316,10 +315,7 @@ function bloodBurst(point,direction,force){
  }
 }
 
-function buildRagdoll(p,impulse){
- if(p.ragdoll||!p.model)return;
- p.model.updateMatrixWorld(true);
- const defs=[
+const ragdollDefs=[
   ['pelvis',/^(pelvis|hips)$/i,null,.18,15],
   ['spine',/^(spine_01|spine|spine1)$/i,'pelvis',.18,12],
   ['chest',/^(spine_03|spine_02|chest|spine3)$/i,'spine',.18,11],
@@ -333,27 +329,146 @@ function buildRagdoll(p,impulse){
   ['thigh_r',/^(thigh_r|rightupleg|rightthigh)$/i,'pelvis',.14,8],
   ['calf_r',/^(calf_r|rightleg|rightcalf)$/i,'thigh_r',.11,5]
  ];
- const bones=[];p.model.traverse(o=>{if(o.isBone)bones.push(o)});
+const limbIds={
+ upperarm_l:'leftArm',lowerarm_l:'leftArm',upperarm_r:'rightArm',lowerarm_r:'rightArm',
+ thigh_l:'leftLeg',calf_l:'leftLeg',thigh_r:'rightLeg',calf_r:'rightLeg'
+};
+function npcRig(p){
+ if(!p.rigParts){
+  const bones=[];p.model.traverse(bone=>{if(bone.isBone)bones.push(bone)});
+  p.rigParts=new Map();
+  for(const [id,pattern] of ragdollDefs){
+   const bone=bones.find(b=>pattern.test(b.name));
+   if(!bone)continue;
+   const end=bones.find(b=>b.parent===bone&&b.isBone);
+   p.rigParts.set(id,{id,bone,end});
+  }
+ }
+ return p.rigParts;
+}
+function npcContactParts(p){
+ const parts=p.ragdollParts||npcRig(p);
+ return [...parts.values()].map(part=>{
+  const start=part.body?new THREE.Vector3().copy(part.body.position):part.bone.getWorldPosition(new THREE.Vector3());
+  const end=part.body&&part.segment?
+   part.segment.clone().applyQuaternion(part.body.quaternion).add(start):
+   part.end?.getWorldPosition(new THREE.Vector3())||start;
+  return {part,start,end:limbIds[part.id]?end:start};
+ });
+}
+function descendantOf(bone,root){
+ for(let b=bone;b;b=b.parent)if(b===root)return true;
+ return false;
+}
+// Split the imported skin at the joint. Both sides retain their original
+// materials and skin weights, so the loose segment follows its ragdoll body.
+function separateImportedLimb(p,part){
+ const meshes=[];
+ p.model.traverse(mesh=>{if(mesh.isSkinnedMesh)meshes.push(mesh)});
+ let separated=false;
+ for(const mesh of meshes){
+  const geometry=mesh.geometry;
+  const joints=geometry.getAttribute('skinIndex'),weights=geometry.getAttribute('skinWeight');
+  if(!joints||!weights)continue;
+  const onLimb=mesh.skeleton.bones.map(bone=>descendantOf(bone,part.bone));
+  const index=geometry.getIndex();
+  const count=index?.count??joints.count;
+  const vertexWeights=new Float32Array(joints.count);
+  for(let v=0;v<joints.count;v++)for(let lane=0;lane<4;lane++){
+   if(onLimb[joints.getComponent(v,lane)])vertexWeights[v]+=weights.getComponent(v,lane);
+  }
+  const attached=[],loose=[];
+  for(let i=0;i<count;i+=3){
+   const a=index?index.getX(i):i,b=index?index.getX(i+1):i+1,c=index?index.getX(i+2):i+2;
+   const target=vertexWeights[a]+vertexWeights[b]+vertexWeights[c]>=1.5?loose:attached;
+   target.push(a,b,c);
+  }
+  if(!loose.length)continue;
+  separated=true;
+  if(!attached.length)continue;
+  const looseMesh=mesh.clone();
+  const splitGeometry=(triangles,keepLimb)=>{
+   const split=geometry.clone();
+   const splitJoints=split.getAttribute('skinIndex'),splitWeights=split.getAttribute('skinWeight');
+   for(const v of new Set(triangles)){
+    let total=0;
+    for(let lane=0;lane<4;lane++){
+     const weight=weights.getComponent(v,lane);
+     if(onLimb[joints.getComponent(v,lane)]===keepLimb){
+      total+=weight;
+     }
+    }
+    if(total<.00001){
+     const fallback=mesh.skeleton.bones.indexOf(keepLimb?part.bone:part.bone.parent);
+     splitJoints.setX(v,Math.max(0,fallback));splitWeights.setXYZW(v,1,0,0,0);
+     continue;
+    }
+    for(let lane=0;lane<4;lane++){
+     const belongs=onLimb[joints.getComponent(v,lane)]===keepLimb;
+     splitWeights.setComponent(v,lane,belongs?weights.getComponent(v,lane)/total:0);
+    }
+   }
+   split.setIndex(triangles);
+   return split;
+  };
+  looseMesh.geometry=splitGeometry(loose,true);
+  mesh.geometry=splitGeometry(attached,false);
+  mesh.parent.add(looseMesh);
+  if(mesh.userData.limbGeometry)geometry.dispose();
+  mesh.userData.limbGeometry=true;
+  looseMesh.userData.limbGeometry=true;
+ }
+ return separated;
+}
+function fractureNPCPart(p,part,point,direction,detach){
+ const limb=limbIds[part?.id];
+ if(!limb||part.detached||!part.joint)return false;
+ const firstFracture=!part.broken;
+ if(!firstFracture&&!detach)return false;
+ if(firstFracture){
+  part.broken=true;
+  physics.removeConstraint(part.rotationLimit);
+  p.ragdollConstraints.splice(p.ragdollConstraints.indexOf(part.rotationLimit),1);
+  part.rotationLimit=null;
+  (p.injuries??={})[limb]=3;
+  (p.fractures??={})[limb]={severity:3,time:performance.now(),healed:false};
+  p.fallTime=0;
+  p.alive=false;
+ }
+ if(detach&&separateImportedLimb(p,part)){
+  physics.removeConstraint(part.joint);
+  p.ragdollConstraints.splice(p.ragdollConstraints.indexOf(part.joint),1);
+  part.joint=null;
+  part.detached=true;
+  if(!p.dead){p.dead=true;state.kos++;hud()}
+ }
+ part.body.wakeUp();
+ const strength=part.detached?11:6;
+ part.body.applyImpulse(new CANNON.Vec3(direction.x*strength,direction.y*strength,direction.z*strength));
+ bloodBurst(point,direction,strength);
+ if(part.detached){
+  bloodBurst(point,direction.clone().negate(),9);
+  bloodStain(point);
+ }
+ beep(part.detached?58:82,.14,'triangle');
+ announce(limb.toUpperCase()+(part.detached?' DETACHED':' FRACTURED'));
+ return true;
+}
+function buildRagdoll(p,impulse){
+ if(p.ragdoll||!p.model)return;
+ p.model.updateMatrixWorld(true);
+
+ const rig=npcRig(p);
  const parts=new Map(),constraints=[];
- for(const [id,re,parentId,radius,mass] of defs){
-  const bone=bones.find(b=>re.test(b.name));if(!bone)continue;
+ for(const [id,,parentId,radius,mass] of ragdollDefs){
+  const entry=rig.get(id);if(!entry)continue;
+  const {bone,end:distal}=entry;
   const world=bone.getWorldPosition(new THREE.Vector3());
   const quat=bone.getWorldQuaternion(new THREE.Quaternion());
   // Place limb colliders between real imported skeleton joints.
-  const distalNames={
-   upperarm_l:/^(lowerarm_l|leftforearm|leftlowerarm)$/i,
-   lowerarm_l:/^(hand_l|lefthand)$/i,
-   upperarm_r:/^(lowerarm_r|rightforearm|rightlowerarm)$/i,
-   lowerarm_r:/^(hand_r|righthand)$/i,
-   thigh_l:/^(calf_l|leftleg|leftcalf)$/i,
-   calf_l:/^(foot_l|leftfoot)$/i,
-   thigh_r:/^(calf_r|rightleg|rightcalf)$/i,
-   calf_r:/^(foot_r|rightfoot)$/i
-  };
-  const distal=distalNames[id]&&bones.find(b=>distalNames[id].test(b.name));
   const end=distal?.getWorldPosition(new THREE.Vector3());
   const direction=end?end.clone().sub(world):null;
-  const elongated=!!direction&&direction.length()>.08;
+  const elongated=!!limbIds[id]&&!!direction&&direction.length()>.08;
   const segmentLength=elongated?direction.length():0;
   const shape=elongated?new CANNON.Cylinder(radius,radius,segmentLength*.92,8):id==='chest'||id==='pelvis'?new CANNON.Box(new CANNON.Vec3(id==='chest'?.22:.19,id==='chest'?.19:.13,.13)):new CANNON.Sphere(radius);
   const body=new CANNON.Body({mass,linearDamping:.18,angularDamping:.46,collisionFilterGroup:2,collisionFilterMask:1});
@@ -364,17 +479,17 @@ function buildRagdoll(p,impulse){
    const shapeOffset=localDir.clone().multiplyScalar(segmentLength*.5);
    body.addShape(shape,new CANNON.Vec3(shapeOffset.x,shapeOffset.y,shapeOffset.z),new CANNON.Quaternion(shapeRotation.x,shapeRotation.y,shapeRotation.z,shapeRotation.w));
   }else body.addShape(shape);
-  physics.addBody(body);parts.set(id,{bone,body,parentId,restPosition:bone.position.clone(),restQuaternion:bone.quaternion.clone()});
+  physics.addBody(body);parts.set(id,{id,bone,body,parentId,segment:elongated?direction.clone().applyQuaternion(quat.clone().invert()):null,restPosition:bone.position.clone(),restQuaternion:bone.quaternion.clone()});
  }
  if(parts.size<6){for(const part of parts.values())physics.removeBody(part.body);reportError('Ragdoll rig missing limb bones',p.role||'NPC');return}
  for(const part of parts.values()){
   const parent=parts.get(part.parentId);if(!parent)continue;
-  const a=parent.body.position,b=part.body.position;
+  const b=part.body.position;
   // Anchor at the actual child joint, not the midpoint between limb origins.
   const pivotA=parent.body.pointToLocalFrame(b),pivotB=part.body.pointToLocalFrame(b);
-  const id=[...parts.entries()].find(([,value])=>value===part)?.[0]||'';
+  const id=part.id;
   const damaged=id.endsWith('_l')?(id.includes('arm')?p.fractures?.leftArm:p.fractures?.leftLeg):id.endsWith('_r')?(id.includes('arm')?p.fractures?.rightArm:p.fractures?.rightLeg):false;
-  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,damaged?75:350);physics.addConstraint(joint);constraints.push(joint);
+  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,damaged?75:350);physics.addConstraint(joint);constraints.push(joint);part.joint=joint;
   // Rotational limit prevents unconstrained 360-degree limb spinning.
   const swing=id==='head'?.55:id.startsWith('lowerarm')?1.55:id.startsWith('calf')?1.15:id.startsWith('upperarm')?1.35:id.startsWith('thigh')?.95:.55;
   const limit=new CANNON.ConeTwistConstraint(parent.body,part.body,{pivotA,pivotB,axisA:new CANNON.Vec3(0,1,0),axisB:new CANNON.Vec3(0,1,0),angle:damaged?Math.min(Math.PI,swing*1.35):swing,twistAngle:damaged?.8:.35,maxForce:damaged?50:240});
@@ -421,16 +536,9 @@ function grabNPC(i){
  let closest=null,best=.36;
  for(const p of players){
   if(!p.model||(!p.alive&&!p.ragdollParts))continue;
-  if(!p.ragdollParts){
-   p.model.updateMatrixWorld(true);
-   p.model.traverse(b=>{
-    if(!b.isBone||!/(head|neck|spine|pelvis|upperarm|lowerarm|thigh|calf|hand)/i.test(b.name))return;
-    const distance=b.getWorldPosition(new THREE.Vector3()).distanceTo(pos);
-    if(distance<best){best=distance;closest={p,boneName:b.name}}
-   });
-  }else for(const [name,part] of p.ragdollParts){
-   const distance=Math.hypot(part.body.position.x-pos.x,part.body.position.y-pos.y,part.body.position.z-pos.z);
-   if(distance<best){best=distance;closest={p,name}}
+  for(const {part,start,end} of npcContactParts(p)){
+   const distance=segmentDistanceSquared(pos,start,end);
+   if(distance<best*best){best=Math.sqrt(distance);closest={p,id:part.id}}
   }
  }
  if(!closest)return false;
@@ -439,27 +547,21 @@ function grabNPC(i){
  if(!p.ragdollParts)buildRagdoll(p,null);
  if(!p.ragdollParts)return false;
  p.alive=false;
- let part=closest.name?p.ragdollParts.get(closest.name):null;
- if(!part){
-  let min=Infinity;
-  for(const candidate of p.ragdollParts.values()){
-   const d=Math.hypot(candidate.body.position.x-pos.x,candidate.body.position.y-pos.y,candidate.body.position.z-pos.z);
-   if(d<min){min=d;part=candidate}
-  }
- }
- if(!part)return false;
+ const part=p.ragdollParts.get(closest.id); if(!part)return false;
  const anchor=gripAnchors[i];anchor.position.set(pos.x,pos.y,pos.z);part.body.wakeUp();
  hand.userData.gripLastPosition=pos.clone();
  hand.userData.gripVelocity=new THREE.Vector3();
  const pivot=part.body.pointToLocalFrame(new CANNON.Vec3(pos.x,pos.y,pos.z));
  const joint=new CANNON.PointToPointConstraint(anchor,new CANNON.Vec3(),part.body,pivot,180);
- physics.addConstraint(joint);npcGrips[i]={p,part,joint};
+ physics.addConstraint(joint);
+ const proximal=p.ragdollParts.get(part.parentId)?.body.position;
+ npcGrips[i]={p,part,joint,gripDistance:proximal?pos.distanceTo(proximal):0,startRotation:hand.getWorldQuaternion(new THREE.Quaternion()),load:0};
  enterBrawl();
  announce('NPC GRABBED');return true;
 }
 function updateNPCGrips(){
  for(let i=0;i<2;i++){
-  if(!npcGrips[i])continue;
+  const held=npcGrips[i];if(!held)continue;
   const hand=i===0?controller0:controller1;
   const pos=hand.localToWorld(new THREE.Vector3(0,0,-.075)),anchor=gripAnchors[i];
   const old=hand.userData.gripLastPosition;
@@ -468,6 +570,21 @@ function updateNPCGrips(){
   hand.userData.gripVelocity=v;
   anchor.position.set(pos.x,pos.y,pos.z);
   hand.userData.gripLastPosition=pos.clone();
+  const {p,part}=held;
+  const proximal=p.ragdollParts.get(part.parentId)?.body.position;
+  if(!proximal||!limbIds[part.id]||part.detached)continue;
+  const direction=pos.clone().sub(proximal);
+  const extension=direction.length()-held.gripDistance;
+  const pulling=v.dot(direction.normalize());
+  const braced=npcGrips.some(other=>other&&other!==held&&other.p===p&&other.part!==part&&!other.part.detached);
+  const twist=hand.getWorldQuaternion(new THREE.Quaternion()).angleTo(held.startRotation);
+  const tension=extension>(braced?.12:.22);
+  const levering=extension>.06&&twist>(braced?1.15:1.65);
+  held.load=tension||levering?held.load+dt:0;
+  if(part.broken ? held.load>.24&&extension>.35 : (tension&&pulling>2.1)||held.load>.18){
+   fractureNPCPart(p,part,new THREE.Vector3().copy(part.body.position),direction,part.broken);
+   held.load=0;
+  }
  }
 }
 function hitEffect(){} // Await imported impact effect.
@@ -486,7 +603,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='quest-controller-hands-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='quest-npc-limb-physics-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -1039,35 +1156,37 @@ function trackedMelee(i,now,dt){
  let hit=null,hitDistance=reach*reach;
  for(const p of players){
   if(!p.model||(!p.alive&&!p.ragdollParts))continue;
-  const targets=p.ragdollParts?
-   [...p.ragdollParts.values()].map(part=>({part,bone:part.bone,center:new THREE.Vector3().copy(part.body.position)})):
-   (p.meleeBones??=(function(){
-    const bones=[];
-    p.model.traverse(o=>{if(o.isBone&&/(head|neck|spine|pelvis|chest|upperarm|thigh)/i.test(o.name))bones.push(o)});
-    return bones;
-   })()).map(bone=>({bone,center:bone.getWorldPosition(new THREE.Vector3())}));
-  for(const {part,bone,center} of targets){
-   const distance=segmentDistanceSquared(center,last.tip,tip);
-   if(distance<hitDistance){hitDistance=distance;hit={p,part,bone,center}}
+  for(const {part,start,end} of npcContactParts(p)){
+   // Sample along the imported joint-to-joint segment for below-knee and forearm hits.
+   for(const fraction of limbIds[part.id]?[0,.33,.67,1]:[0]){
+    const center=start.clone().lerp(end,fraction);
+    const distance=segmentDistanceSquared(center,last.tip,tip);
+    if(distance<hitDistance){hitDistance=distance;hit={p,part,center}}
+   }
   }
  }
  if(!hit)return;
  lastMeleeContact[i]=now;
  enterBrawl();
- const {p,part,bone,center}=hit;
+ const {p,part,center}=hit;
+ const bone=part.bone;
  const direction=travel.normalize();
  const force=bat?Math.min(11,4+speed):knife?Math.min(9,3+speed*.8):Math.min(7,2+speed*.6);
  if(!p.dead)p.health=Math.max(0,p.health-(bat?2:knife?3:1));
+ if(bat&&limbIds[part.id]&&speed>=3.2){
+  if(!p.ragdollParts)buildRagdoll(p,null);
+  const struck=p.ragdollParts?.get(part.id);
+  if(fractureNPCPart(p,struck,center,direction,struck?.broken&&speed>=4.6)){
+   pulseMelee(i,force);
+   return;
+  }
+ }
  const injury=wound(p,force,center);
  bruise(p,bone,center,direction);
  bloodBurst(center,direction,knife?force*2.2:force);
  beep(injury.includes('FRACTURED')?78:116,.105,'triangle');
- if(part){
+ if(part.body){
   part.body.wakeUp();
-  if(part.rotationLimit&&injury.includes('FRACTURED')){
-   part.rotationLimit.angle=Math.max(part.rotationLimit.angle,1.9);
-   part.rotationLimit.twistAngle=Math.max(part.rotationLimit.twistAngle,.8);
-  }
   part.body.applyImpulse(new CANNON.Vec3(direction.x*force,direction.y*force,direction.z*force));
  }
  if(!p.dead&&p.health<=0){
@@ -1081,6 +1200,9 @@ function trackedMelee(i,now,dt){
   playCharacter(p,'hit');
   announce(injury);
  }
+ pulseMelee(i,force);
+}
+function pulseMelee(i,force){
  const source=[...renderer.xr.getSession().inputSources].find(s=>s.handedness===(i===0?'left':'right'));
  source?.gamepad?.hapticActuators?.[0]?.pulse?.(Math.min(1,force/8),45)?.catch?.(()=>{});
 }
@@ -1188,7 +1310,7 @@ for(const mixer of mixers)mixer.update(dt);updateNeckReactions(now);for(const fa
 for(const p of players){
  if(!p.ragdollParts)continue;
  p.fallTime+=dt;
- if(!p.dead&&p.fallTime>7&&!npcGrips.some(g=>g?.p===p)){recoverNPC(p);continue}
+ if(!p.dead&&![...p.ragdollParts.values()].some(part=>part.broken)&&p.fallTime>7&&!npcGrips.some(g=>g?.p===p)){recoverNPC(p);continue}
  // Prevent excessive velocity and perpetual ragdoll jitter after impact.
  for(const part of p.ragdollParts.values()){
   const b=part.body;
