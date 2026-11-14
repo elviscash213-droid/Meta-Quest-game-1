@@ -181,10 +181,13 @@ const sharedMotions={};
 function attachSharedMotions(p){
  if(!p?.model||!p.mixer||!Object.keys(sharedMotions).length)return;
  const boneNames=new Set();p.model.traverse(o=>{if(o.isBone)boneNames.add(o.name)});
+ // Some exported glTF animations target node names with armature prefixes.
+ const normalize=n=>n.toLowerCase().replace(/[^a-z0-9]/g,'').replace(/^(mixamorig|armature|bip001|biped)/,'');
+ const normalizedBones=new Map([...boneNames].map(n=>[normalize(n),n]));
  p.actions=p.actions||{};p.clips=p.clips||{};
  let attached=0;
  for(const [name,clip] of Object.entries(sharedMotions)){
-  const matching=clip.tracks.filter(t=>boneNames.has(t.name.split('.')[0]));
+  const matching=clip.tracks.map(t=>{const dot=t.name.lastIndexOf('.');if(dot<0)return null;const target=t.name.slice(0,dot),actual=boneNames.has(target)?target:normalizedBones.get(normalize(target));if(!actual)return null;const track=t.clone();track.name=actual+t.name.slice(dot);return track}).filter(Boolean);
   if(!matching.length)continue;
   const compatible=clip.clone();compatible.tracks=matching;
   p.actions[name]=p.mixer.clipAction(compatible);p.clips[name]=name;attached++;
