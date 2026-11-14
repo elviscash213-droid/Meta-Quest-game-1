@@ -225,7 +225,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    // Attach motion clips only after the character mixer has been created.
    p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
    if(!gltf.animations.length)p.fallbackRig=setupFallbackPose(model);
-   p.actions={};for(const clip of gltf.animations)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
+   p.actions={};for(const clip of gltf.animations){const action=p.mixer.clipAction(clip);p.actions[clip.name]=action;p.actions[clip.name.toLowerCase()]=action;}
    const idle=gltf.animations.find(c=>/idle|stand|breath|walk|run/i.test(c.name))||gltf.animations[0];
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
    p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};attachSharedMotions(p);
@@ -253,7 +253,18 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
   modelStatus.textContent='BUILD '+BUILD_VERSION+' · ATHLETES '+athletesLoaded+'/2 · MOTIONS '+(Object.keys(sharedMotions).join(', ')||'LOADING');
  }).catch(e=>reportError('Athlete skeleton cloning',e));
 },undefined,e=>{modelStatus.textContent='ATHLETE IMPORT FAILED · '+url;reportError('Athlete import',e)}));
-function playCharacter(p,name){if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;if(!key)return;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
+function playCharacter(p,name){
+ if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';
+ if(!p.mixer||!p.actions)return;
+ const aliases={idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|hit)/i,death:/^(death|die|dead)/i};
+ const requested=p.clips?.[name]||name;
+ const direct=p.actions[requested]||p.actions[requested.toLowerCase()];
+ const key=Object.keys(p.actions).find(k=>aliases[name]?.test(k));
+ const next=direct||p.actions[key]||p.actions.idle;
+ if(!next||next===p.currentAction)return;
+ next.enabled=true;next.reset().fadeIn(.2).play();
+ p.currentAction?.fadeOut(.2);p.currentAction=next;
+}
 
 let ball=null,velocity=new THREE.Vector3(),state={inning:1,half:'BOTTOM',home:0,away:0,hr:0,kos:0,outs:0,balls:0,strikes:0,bases:[false,false,false],mode:'BAT',flying:false,contact:false,gameOver:false},lastPitch=0,lastSwing=0;
 function count(){document.getElementById('count').textContent=state.half+' · '+state.balls+'-'+state.strikes+' · BASES '+state.bases.map(v=>v?'●':'○').join('')}
