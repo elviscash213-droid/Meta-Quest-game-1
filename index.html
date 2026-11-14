@@ -169,7 +169,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-telegraphed-combat-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-skeletal-hitboxes-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -288,13 +288,13 @@ function playCharacter(p,name){
  if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';
  if((name==='idle'||name==='walk'||name==='run')&&p.actionLockUntil&&performance.now()<p.actionLockUntil)return;
  if(!p.mixer||!p.actions)return;
- const aliases={idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|hit|fire|shoot)/i,death:/^(death|die|dead|fall|defeat)/i};
+ const aliases={idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|fire|shoot)/i,hit:/^(hit|hurt|react|stagger|impact)/i,death:/^(death|die|dead|fall|defeat)/i};
  const requested=p.clips?.[name]||name;
  const direct=p.actions[requested]||p.actions[requested.toLowerCase()];
  const key=Object.keys(p.actions).find(k=>aliases[name]?.test(k));
  const next=direct||p.actions[key];
  if(!next)return;
- if(name==='attack')p.actionLockUntil=performance.now()+Math.max(450,Math.min(1200,next.getClip().duration*1000));
+ if(name==='attack'||name==='hit')p.actionLockUntil=performance.now()+Math.max(350,Math.min(1200,next.getClip().duration*1000));
  if(name==='death')p.actionLockUntil=Infinity;
  if(!next||next===p.currentAction)return;
  next.enabled=true;next.reset().fadeIn(.2).play();
@@ -363,9 +363,13 @@ function trackedMelee(now,dt){
  if(previous&&speed>(holdingBat?1.6:1.1)&&now-lastMeleeContact>380){
   for(const p of players){
    if(!p.alive||!p.model)continue;
-   const center=p.group.position.clone().add(new THREE.Vector3(0,1.25,0));
-   const reach=holdingBat?.8:.58;
-   if(segmentDistanceSquared(center,previous,tip)>reach*reach)continue;
+   const reach=holdingBat?.43:.32;
+   // Imported skeletal bones provide moving anatomical hit targets.
+   const joints=[];p.model.traverse(o=>{if(o.isBone&&/(head|neck|spine|pelvis|chest|upperarm|thigh)/i.test(o.name))joints.push(o)});
+   const centers=joints.length?joints.map(b=>b.getWorldPosition(new THREE.Vector3())):[
+    p.group.position.clone().add(new THREE.Vector3(0,1.25,0))
+   ];
+   if(!centers.some(center=>segmentDistanceSquared(center,previous,tip)<reach*reach))continue;
    lastMeleeContact=now;
    state.mode='BRAWL';hud();
    const direction=tip.clone().sub(previous).normalize();
@@ -375,7 +379,7 @@ function trackedMelee(now,dt){
    const impact=p.group.position.clone().add(new THREE.Vector3(0,1.2,0));
    const injury=wound(p,force,impact);bloodBurst(impact,direction,force);
    if(p.health<=0){p.alive=false;state.kos++;buildRagdoll(p,direction.multiplyScalar(force));hud();announce('KNOCKDOWN')}
-   else{p.group.position.addScaledVector(direction,.16);playCharacter(p,'run');announce(injury)}
+   else{p.group.position.addScaledVector(direction,.16);playCharacter(p,'hit');announce(injury)}
    break;
   }
  }
