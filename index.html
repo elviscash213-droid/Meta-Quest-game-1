@@ -159,14 +159,14 @@ function buildRagdoll(p,impulse){
   ['calf_r',/^(calf_r|rightleg|rightcalf)$/i,'thigh_r',.11,5]
  ];
  const bones=[];p.model.traverse(o=>{if(o.isBone)bones.push(o)});
- const parts=new Map();
+ const parts=new Map(),constraints=[];
  for(const [id,re,parentId,radius,mass] of defs){
   const bone=bones.find(b=>re.test(b.name));if(!bone)continue;
   const world=bone.getWorldPosition(new THREE.Vector3());
   const quat=bone.getWorldQuaternion(new THREE.Quaternion());
   const body=new CANNON.Body({mass,shape:new CANNON.Sphere(radius),linearDamping:.22,angularDamping:.65,collisionFilterGroup:2,collisionFilterMask:1});
   body.position.set(world.x,world.y,world.z);body.quaternion.set(quat.x,quat.y,quat.z,quat.w);
-  physics.addBody(body);parts.set(id,{bone,body,parentId});
+  physics.addBody(body);parts.set(id,{bone,body,parentId,restPosition:bone.position.clone(),restQuaternion:bone.quaternion.clone()});
  }
  if(parts.size<6){for(const part of parts.values())physics.removeBody(part.body);reportError('Ragdoll rig missing limb bones',p.role||'NPC');return}
  for(const part of parts.values()){
@@ -174,13 +174,25 @@ function buildRagdoll(p,impulse){
   const a=parent.body.position,b=part.body.position;
   const midpoint=new CANNON.Vec3((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
   const pivotA=midpoint.vsub(a),pivotB=midpoint.vsub(b);
-  physics.addConstraint(new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,250));
+  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,250);physics.addConstraint(joint);constraints.push(joint);
  }
- p.ragdoll=true;p.ragdollParts=parts;p.fallTime=0;p.actionLockUntil=Infinity;
+ p.ragdoll=true;p.ragdollParts=parts;p.ragdollConstraints=constraints;p.fallTime=0;p.actionLockUntil=Infinity;
  p.mixer?.stopAllAction();
  const center=parts.get('chest')||parts.get('pelvis')||parts.values().next().value;
  center.body.applyImpulse(new CANNON.Vec3(THREE.MathUtils.clamp(impulse.x*2,-16,16),Math.max(3,Math.min(9,impulse.y*2)),THREE.MathUtils.clamp(impulse.z*2,-16,16)),center.body.position);
  announce('NPC RAGDOLL');
+}
+function recoverNPC(p){
+ if(!p.ragdollParts)return;
+ for(const joint of p.ragdollConstraints||[])physics.removeConstraint(joint);
+ for(const part of p.ragdollParts.values())physics.removeBody(part.body);
+ for(const {bone,restPosition,restQuaternion} of p.ragdollParts.values()){
+  bone.position.copy(restPosition);bone.quaternion.copy(restQuaternion);
+ }
+ p.ragdollParts=null;p.ragdollConstraints=null;p.ragdoll=false;
+ p.group.rotation.set(0,0,0);p.group.position.copy(initialPositions[players.indexOf(p)]);
+ p.health=8;p.alive=true;p.actionLockUntil=0;p.pendingAttackAt=0;
+ playCharacter(p,'idle');
 }
 function hitEffect(){} // Await imported impact effect.
 function combatHit(){if(state.gameOver)return;
@@ -197,7 +209,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-ragdoll-stability-hitfix-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-npc-recovery-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -474,6 +486,7 @@ for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)up
 for(const p of players){
  if(!p.ragdollParts)continue;
  p.fallTime+=dt;
+ if(p.fallTime>9){recoverNPC(p);continue}
  // Prevent excessive velocity and perpetual ragdoll jitter after impact.
  for(const part of p.ragdollParts.values()){
   const b=part.body;
