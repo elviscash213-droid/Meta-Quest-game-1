@@ -155,11 +155,11 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-physics-audit-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-nine-human-66clips-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
-const athleteURLs=['https://www.shanebrumback.com/models/soldier_rigged.glb'];
+const athleteURLs=["https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_1037.glb","https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_1074.glb","https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_1111.glb","https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_1148.glb","https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_1185.glb","https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_3000.glb","https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_3122.glb","https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_3183.glb","https://raw.githubusercontent.com/MMWilliams/char-kit/master/characters/mh_3305.glb"];
 const athleteLoader=new GLTFLoader();athleteLoader.setMeshoptDecoder(MeshoptDecoder);
 // Pose imported skinned rigs even when their GLB lacks animation clips.
 // This modifies existing imported skeleton bones; it creates no visible geometry.
@@ -242,7 +242,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    const idle=gltf.animations.find(c=>/^(idle|stand|breath)$/i.test(c.name))||gltf.animations.find(c=>/idle|stand|breath/i.test(c.name))||gltf.animations.find(c=>!/tpose|t-pose|bindpose/i.test(c.name));
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
    p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};if(!gltf.animations.length)attachSharedMotions(p);
-   p.role=fieldRoles[i];if(!gltf.animations.length&&!p.fallbackRig)console.warn('No recognized animation armature for',url);
+   p.role=fieldRoles[i];p.importedClipCount=gltf.animations.length;if(!gltf.animations.length&&!p.fallbackRig)console.warn('No recognized animation armature for',url);
   });
   if(variant===0&&!playerAvatar){
    const avatar=clone(gltf.scene);
@@ -270,13 +270,13 @@ function playCharacter(p,name){
  if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';
  if((name==='idle'||name==='walk'||name==='run')&&p.actionLockUntil&&performance.now()<p.actionLockUntil)return;
  if(!p.mixer||!p.actions)return;
- const aliases={idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|hit|fire|shoot)/i,death:/^(death|die|dead|fall)/i};
+ const aliases={idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|hit|fire|shoot)/i,death:/^(death|die|dead|fall|defeat)/i};
  const requested=p.clips?.[name]||name;
  const direct=p.actions[requested]||p.actions[requested.toLowerCase()];
  const key=Object.keys(p.actions).find(k=>aliases[name]?.test(k));
  const next=direct||p.actions[key];
  if(!next)return;
- if(name==='attack')p.actionLockUntil=performance.now()+650;
+ if(name==='attack')p.actionLockUntil=performance.now()+Math.max(450,Math.min(1200,next.getClip().duration*1000));
  if(name==='death')p.actionLockUntil=Infinity;
  if(!next||next===p.currentAction)return;
  next.enabled=true;next.reset().fadeIn(.2).play();
