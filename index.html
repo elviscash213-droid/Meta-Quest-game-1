@@ -16,7 +16,7 @@ button{background:#c53b27;color:white;border:0;border-radius:7px;padding:9px 11p
 body.in-vr #panel,body.in-vr #hud,body.in-vr #msg,body.in-vr #showDiagnostics,body.in-vr #diagnostics{display:none!important}
 </style></head>
 <body><div id="hud"><b id="score">INNING 1 / 9 · HOME 0 : AWAY 0</b><b id="count">TOP · 0-0 · BASES ○○○</b><b id="status">HR 0 · KOs 0 · OUTS 0</b></div><div id="msg"></div><div id="diagnostics" style="position:fixed;right:10px;bottom:130px;width:min(380px,90vw);max-height:32vh;overflow:auto;background:#190d11ed;color:#fff;border:1px solid #e27777;border-radius:9px;padding:9px;font:12px monospace;display:none;z-index:10"><b>GAME DIAGNOSTICS</b><button id="closeDiagnostics" style="float:right;padding:2px 7px">X</button><div id="errorLines"></div></div><button id="showDiagnostics" style="position:fixed;right:10px;bottom:85px;z-index:9;background:#233e57">ERROR LOG <span id="errorCount">0</span></button>
-<div id="panel"><b>NO RULES BASEBALL — PHASE 6 · AI & GAME MODES</b><div><button id="pitch">PITCH</button><button id="take">TAKE PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="weaponSwitch">WEAPON: BAT</button><button id="goreToggle">BLOOD: ON</button><button id="aiToggle">AI: ON</button><button id="gameMode">RULES: BASEBALL</button><button id="soundToggle">SOUND: ON</button><button id="reset">RESET</button></div><small>QUEST: Right grip holds bat, physically swing to hit. Left trigger pitches. A switches weapon/takes pitch; B toggles combat; X rules; Y AI. Left stick moves; right stick turns. Browser buttons are debug-only.</small></div>
+<div id="panel"><b>NO RULES BASEBALL — PHASE 6 · AI & GAME MODES</b><div><button id="pitch">PITCH</button><button id="take">TAKE PITCH</button><button id="swing">SWING / ATTACK</button><button id="mode">MODE: BAT</button><button id="weaponSwitch">WEAPON: BAT</button><button id="goreToggle">BLOOD: ON</button><button id="aiToggle">AI: ON</button><button id="gameMode">RULES: BASEBALL</button><button id="soundToggle">SOUND: ON</button><button id="reset">RESET</button></div><small>QUEST: Grip an NPC with either hand and swing your free hand. Right grip also picks up the bat. Left trigger pitches. A switches weapon/takes pitch; B toggles combat; X rules; Y AI. Left stick moves; right stick turns. Browser buttons are debug-only.</small></div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
@@ -75,7 +75,7 @@ const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(.85,
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Mesh(new THREE.PlaneGeometry(1.12,.28),new THREE.MeshBasicMaterial({map:vrTexture,transparent:true,depthTest:false}));vrBoard.position.set(0,-.49,-1.7);vrBoard.renderOrder=10;camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
-function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=errors.length?errors[errors.length-1]:'SYSTEM OK · ASSETS: '+(loadStatus?.textContent||'pending');vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('LEFT STICK MOVE · RIGHT STICK TURN · LEFT TRIGGER PITCH · GRIP BAT',25,218);vrTexture.needsUpdate=true}
+function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=errors.length?errors[errors.length-1]:'SYSTEM OK · ASSETS: '+(loadStatus?.textContent||'pending');vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('GRIP NPC WITH EITHER HAND · SWING FREE HAND TO PUNCH',25,218);vrTexture.needsUpdate=true}
 
 
 // Baseball diamond reference positions in metres, centered on home plate.
@@ -216,7 +216,7 @@ let weaponKind='BAT';let lastCombat=0;const impactPoint=new THREE.Vector3(),impa
 function injuryLabel(p){if(!p.injuries)return '';return Object.entries(p.injuries).filter(([k,v])=>v>0).map(([k,v])=>k.toUpperCase()+' '+(v>=2?'FRACTURED':'BRUISED')).join(' · ')}
 function wound(p,force,point){
  if(!p.injuries)p.injuries={leftArm:0,rightArm:0,leftLeg:0,rightLeg:0,torso:0};
- const keys=Object.keys(p.injuries);const relative=point.clone().sub(p.group.position);
+ const keys=Object.keys(p.injuries);const relative=p.group.worldToLocal(point.clone());
  let limb=relative.y<.9?(relative.x<0?'leftLeg':'rightLeg'):relative.y>1.8?'torso':(relative.x<0?'leftArm':'rightArm');
  if(!keys.includes(limb))limb='torso';
  p.injuries[limb]=Math.min(3,p.injuries[limb]+(force>=7?2:1));
@@ -241,6 +241,23 @@ function bloodStain(point){
  const size=.16+Math.random()*.34;decal.scale.set(size,size,1);
  scene.add(decal);bloodDecals.push(decal);
  if(bloodDecals.length>75){const old=bloodDecals.shift();scene.remove(old);old.geometry.dispose();old.material.dispose()}
+}
+function bruise(p,bone,point,direction){
+ if(!bloodEnabled||!bloodAtlas.image||!bone)return;
+ const mark=new THREE.Sprite(new THREE.SpriteMaterial({
+  alphaMap:bloodTiles[2],color:0x542052,opacity:.65,transparent:true,depthWrite:false
+ }));
+ mark.scale.set(.16,.16,1);
+ mark.position.copy(bone.worldToLocal(point.clone().addScaledVector(direction,-.095)));
+ const scale=bone.getWorldScale(new THREE.Vector3());
+ mark.scale.divideScalar(Math.max(scale.x,.001));
+ bone.add(mark);
+ p.bruises??=[];
+ p.bruises.push(mark);
+ if(p.bruises.length>12){
+  const old=p.bruises.shift();
+  old.removeFromParent();old.material.dispose();
+ }
 }
 function bloodBurst(point,direction,force){
  if(!bloodEnabled||!bloodAtlas.image||!point)return;
@@ -318,12 +335,12 @@ function buildRagdoll(p,impulse){
   // Rotational limit prevents unconstrained 360-degree limb spinning.
   const swing=id==='head'?.55:id.startsWith('lowerarm')?1.55:id.startsWith('calf')?1.15:id.startsWith('upperarm')?1.35:id.startsWith('thigh')?.95:.55;
   const limit=new CANNON.ConeTwistConstraint(parent.body,part.body,{pivotA,pivotB,axisA:new CANNON.Vec3(0,1,0),axisB:new CANNON.Vec3(0,1,0),angle:damaged?Math.min(Math.PI,swing*1.35):swing,twistAngle:damaged?.8:.35,maxForce:damaged?50:240});
-  physics.addConstraint(limit);constraints.push(limit);
+  physics.addConstraint(limit);constraints.push(limit);part.rotationLimit=limit;
  }
  p.ragdoll=true;p.ragdollParts=parts;p.ragdollConstraints=constraints;p.fallTime=0;p.actionLockUntil=Infinity;
  p.mixer?.stopAllAction();
  const center=parts.get('chest')||parts.get('pelvis')||parts.values().next().value;
- center.body.applyImpulse(new CANNON.Vec3(THREE.MathUtils.clamp(impulse.x*2,-16,16),Math.max(3,Math.min(9,impulse.y*2)),THREE.MathUtils.clamp(impulse.z*2,-16,16)),center.body.position);
+ if(impulse)center.body.applyImpulse(new CANNON.Vec3(THREE.MathUtils.clamp(impulse.x*2,-16,16),Math.max(3,Math.min(9,impulse.y*2)),THREE.MathUtils.clamp(impulse.z*2,-16,16)),center.body.position);
  announce('NPC RAGDOLL');
 }
 function recoverNPC(p){
@@ -350,14 +367,14 @@ function releaseNPCGrip(i){
  const held=npcGrips[i];if(!held)return;
  physics.removeConstraint(held.joint);npcGrips[i]=null;
  const hand=(i===0?controller0:controller1);
- const velocity=hand.userData.releaseVelocity;
+ const velocity=i===0?hand.userData.gripVelocity:hand.userData.releaseVelocity;
  if(velocity)held.part.body.velocity.vadd(new CANNON.Vec3(velocity.x*.65,velocity.y*.65,velocity.z*.65),held.part.body.velocity);
  held.p.psyche.grabbedUntil=performance.now()+1800;
  announce('LIMB RELEASED');
 }
 function grabNPC(i){
  if(npcGrips[i])return true;
- const hand=(i===0?controller0:controller1),pos=hand.getWorldPosition(new THREE.Vector3());
+ const hand=(i===0?controller0:controller1),pos=hand.localToWorld(new THREE.Vector3(0,0,-.075));
  let closest=null,best=.36;
  for(const p of players){
   if(!p.model||(!p.alive&&!p.ragdollParts))continue;
@@ -376,8 +393,9 @@ function grabNPC(i){
  if(!closest)return false;
  const p=closest.p;
  registerThreat(p,.85,performance.now());p.psyche.grabbedUntil=performance.now()+3000;
- if(!p.ragdollParts){p.alive=false;buildRagdoll(p,new THREE.Vector3(0,0,0))}
+ if(!p.ragdollParts)buildRagdoll(p,null);
  if(!p.ragdollParts)return false;
+ p.alive=false;
  let part=closest.name?p.ragdollParts.get(closest.name):null;
  if(!part){
   let min=Infinity;
@@ -387,20 +405,25 @@ function grabNPC(i){
   }
  }
  if(!part)return false;
- const anchor=gripAnchors[i];anchor.position.set(pos.x,pos.y,pos.z);
- const pivot=new CANNON.Vec3(pos.x-part.body.position.x,pos.y-part.body.position.y,pos.z-part.body.position.z);
+ const anchor=gripAnchors[i];anchor.position.set(pos.x,pos.y,pos.z);part.body.wakeUp();
+ hand.userData.gripLastPosition=pos.clone();
+ hand.userData.gripVelocity=new THREE.Vector3();
+ const pivot=part.body.pointToLocalFrame(new CANNON.Vec3(pos.x,pos.y,pos.z));
  const joint=new CANNON.PointToPointConstraint(anchor,new CANNON.Vec3(),part.body,pivot,180);
  physics.addConstraint(joint);npcGrips[i]={p,part,joint};
- announce('LIMB GRIPPED');return true;
+ enterBrawl();
+ announce('NPC GRABBED');return true;
 }
 function updateNPCGrips(){
  for(let i=0;i<2;i++){
+  if(!npcGrips[i])continue;
   const hand=i===0?controller0:controller1;
-  const pos=hand.getWorldPosition(new THREE.Vector3()),anchor=gripAnchors[i];
+  const pos=hand.localToWorld(new THREE.Vector3(0,0,-.075)),anchor=gripAnchors[i];
   const old=hand.userData.gripLastPosition;
   const dt=Math.max(.008,hand.userData.gripDt||.016);
   const v=old?pos.clone().sub(old).divideScalar(dt).clampLength(0,8):new THREE.Vector3();
-  anchor.velocity.set(v.x,v.y,v.z);anchor.position.set(pos.x,pos.y,pos.z);
+  hand.userData.gripVelocity=v;
+  anchor.position.set(pos.x,pos.y,pos.z);
   hand.userData.gripLastPosition=pos.clone();
  }
 }
@@ -416,11 +439,11 @@ function combatHit(){if(state.gameOver)return;
  const force=weaponKind==='BAT'?8:4;best.lastAttack=performance.now()+1400;best.staggerUntil=performance.now()+650;best.health-=weaponKind==='BAT'?2:1;registerThreat(best,weaponKind==='BAT'?1.4:.8,now);
  if(best.psyche){best.psyche.fear=Math.min(2,best.psyche.fear+(weaponKind==='BAT'?.55:.25));best.psyche.anger=Math.min(2,best.psyche.anger+.3);best.psyche.memory.lastHitAt=now;best.psyche.decisionAt=0}
  const pos=best.group.position.clone().add(new THREE.Vector3(0,1.4,0));hitEffect(pos);const damage=wound(best,force,pos);bloodBurst(pos,dir,force);if(best.injuries.leftLeg>=2||best.injuries.rightLeg>=2)best.group.position.y=-.22;
- if(best.health<=0){best.alive=false;state.kos++;buildRagdoll(best,dir.clone().multiplyScalar(force).add(new THREE.Vector3(0,3,0)));announce('KNOCKDOWN!');hud()}
+ if(best.health<=0){best.dead=true;best.alive=false;state.kos++;buildRagdoll(best,dir.clone().multiplyScalar(force).add(new THREE.Vector3(0,3,0)));announce('KNOCKDOWN!');hud()}
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='quest-fielding-metal-bat-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='quest-two-handed-grabs-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -597,8 +620,11 @@ for(let i=0;i<2;i++){
   if(data.handedness==='right')tracked.add(controller1);
  });
  tracked.addEventListener('disconnected',({data})=>{
-  if(data.handedness==='left')controller0.removeFromParent();
-  if(data.handedness==='right')controller1.removeFromParent();
+  if(data.handedness==='left'){releaseNPCGrip(0);questButtons.leftGrip=false;controller0.removeFromParent()}
+  if(data.handedness==='right'){
+   releaseNPCGrip(1);if(batHeld)releaseHeldBat();if(knifeHeld)dropKnife();
+   questButtons.rightGrip=false;controller1.removeFromParent();
+  }
  });
 }
  // Imported WebXR hand meshes, not procedural geometry. Hand tracking drives all finger joints.
@@ -642,7 +668,7 @@ function updateControllerHands(dt){
   handCurl[i]=THREE.MathUtils.damp(handCurl[i],target,16,dt);
   const trigger=buttons?.[0]?.value||0;
   for(const finger of model.fingers){
-   const amount=/(index)/.test(finger.name)?trigger:handCurl[i];
+   const amount=/(index)/.test(finger.name)?Math.max(trigger,handCurl[i]):handCurl[i];
    const bend=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),amount*.85);
    finger.bone.quaternion.copy(finger.rest).multiply(bend);
   }
@@ -687,7 +713,7 @@ function addMetalBat(stadium){
 }
 function releaseHeldBat(){
  if(!batHeld)return;
- batHeld=false;prevBatTip=null;previousMeleeTip=null;
+ batHeld=false;prevBatTip=null;meleeHistory[1]=null;
  if(!importedBatReady)return;
  weapon.updateWorldMatrix(true,true);
  const bat=weapon.children[0];if(!bat)return;
@@ -727,7 +753,7 @@ function grabNearbyBat(){
  announce(name+' GRIPPED');
 }let importedBatReady=false;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33763/v1/model.glb',g=>{const bat=g.scene;bat.rotation.x=-Math.PI/2;bat.position.set(0,0,-.4);if(weapon.children.length)parkReserveBat(bat);else {weapon.add(bat);importedBatReady=true}loadStatus.textContent+=' · BAT IMPORTED'},undefined,e=>reportError('Bat import',e));
 renderer.xr.addEventListener('sessionstart',()=>{document.body.classList.add('in-vr');modelStatus.textContent='VR session started';loadStatus.style.display='none';modelStatus.style.display='none'});
-renderer.xr.addEventListener('sessionend',()=>{document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now();const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
+renderer.xr.addEventListener('sessionend',()=>{meleeHistory.fill(null);releaseNPCGrip(0);releaseNPCGrip(1);document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now();const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
 const batNear=new THREE.Vector3(),batFar=new THREE.Vector3(),batMotion=new THREE.Vector3(),batClosest=new THREE.Vector3();
 function segmentDistanceSquared(p,a,b){const ab=b.clone().sub(a);const len=ab.lengthSq();const t=len>1e-8?THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/len,0,1):0;batClosest.copy(a).addScaledVector(ab,t);return p.distanceToSquared(batClosest)}
 function physicalBatContact(now,dt){
@@ -748,7 +774,8 @@ function physicalBatContact(now,dt){
  state.contact=true;announce('CRACK!');
 }
 // Quest tracked melee: a real hand or imported bat must move through a target.
-let previousMeleeHand=null,previousMeleeTip=null,previousMeleeWeapon='',lastMeleeContact=0;
+const meleeHistory=[null,null];
+const lastMeleeContact=[-Infinity,-Infinity];
 // Layered neck-wound reaction on imported skeletal characters; no substitute meshes.
 function triggerNeckReaction(p,now){
  if(!p.model||p.ragdoll)return;
@@ -776,41 +803,78 @@ function updateNeckReactions(now){
   if(t>.65&&p.health<=0){p.neckReaction=null;p.alive=false;buildRagdoll(p,new THREE.Vector3(0,1.5,0))}
  }
 }
-function trackedMelee(now,dt){
- if(!renderer.xr.isPresenting||state.gameOver)return;
- const hand=controller1.getWorldPosition(new THREE.Vector3());
- const holdingBat=batHeld&&weaponKind==='BAT'&&importedBatReady;
- const holdingKnife=knifeHeld&&weaponKind==='KNIFE';
- const tip=holdingBat?controller1.localToWorld(new THREE.Vector3(0,0,-.85)):holdingKnife?controller1.localToWorld(new THREE.Vector3(0,0,-.28)):hand;
- const equipped=holdingBat?'BAT':holdingKnife?'KNIFE':'FISTS';
- const previous=equipped===previousMeleeWeapon?(equipped==='FISTS'?previousMeleeHand:previousMeleeTip):null;
- const speed=previous?tip.distanceTo(previous)/Math.max(dt,.008):0;
- if(previous&&speed>(holdingBat?1.6:holdingKnife?.55:1.1)&&now-lastMeleeContact>380){
-  for(const p of players){
-   if(!p.alive||!p.model)continue;
-   const reach=holdingBat?.48:holdingKnife?.22:.4;
-   // Imported skeletal bones provide moving anatomical hit targets.
-   const joints=[];p.model.traverse(o=>{if(o.isBone&&/(head|neck|spine|pelvis|chest|upperarm|thigh)/i.test(o.name))joints.push(o)});
-   const centers=joints.map(b=>b.getWorldPosition(new THREE.Vector3()));
-   // Always include anatomical fallback targets for rigs with unusual bone names.
-   for(const y of [.75,1.15,1.5])centers.push(p.group.localToWorld(new THREE.Vector3(0,y,0)));
-
-   if(!centers.some(center=>segmentDistanceSquared(center,previous,tip)<reach*reach))continue;
-   lastMeleeContact=now;
-   state.mode='BRAWL';pitchRelease=0;if(ball){scene.remove(ball);ball=null;state.flying=false;state.contact=false}hud();
-   const direction=tip.clone().sub(previous).normalize();
-   const force=holdingBat?Math.min(11,4+speed):holdingKnife?Math.min(9,3+speed*.8):Math.min(7,2+speed*.6);
-   p.health-=holdingBat?2:holdingKnife?3:1;registerThreat(p,holdingBat?1.4:.8,now);
-   if(p.psyche){p.psyche.fear=Math.min(2,p.psyche.fear+(holdingBat?.55:.25));p.psyche.anger=Math.min(2,p.psyche.anger+.3);p.psyche.memory.lastHitAt=now;p.psyche.decisionAt=0}
-   p.lastAttack=now+900;p.staggerUntil=now+Math.min(850,300+force*55);
-   const impact=holdingKnife?centers.reduce((a,b)=>segmentDistanceSquared(b,previous,tip)<segmentDistanceSquared(a,previous,tip)?b:a,centers[0]).clone():p.group.position.clone().add(new THREE.Vector3(0,1.2,0));
-   const injury=wound(p,force,impact);bloodBurst(impact,direction,holdingKnife?force*2.2:force);if(holdingKnife&&impact.y>p.group.position.y+1.5){p.health=Math.max(0,p.health-2);p.psyche.fear=2;triggerNeckReaction(p,now);announce('NECK WOUND')}
-   if(p.health<=0){p.alive=false;state.kos++;buildRagdoll(p,direction.multiplyScalar(force));hud();announce('KNOCKDOWN')}
-   else{p.group.position.addScaledVector(direction,Math.min(.24,force*.025));playCharacter(p,'hit');announce(injury)}
-   break;
+function enterBrawl(){
+ if(state.mode==='BRAWL')return;
+ state.mode='BRAWL';
+ pitchRelease=0;
+ if(ball)scene.remove(ball);
+ ball=null;state.flying=false;state.contact=false;
+ hud();
+}
+function meleePose(i){
+ const controller=i===0?controller0:controller1;
+ if(!controller.parent||npcGrips[i])return null;
+ const bat=i===1&&batHeld&&weaponKind==='BAT'&&importedBatReady;
+ const knife=i===1&&knifeHeld&&weaponKind==='KNIFE';
+ const reach=bat?.85:knife?.28:.075;
+ return {bat,knife,tip:controller.localToWorld(new THREE.Vector3(0,0,-reach))};
+}
+function trackedMelee(i,now,dt){
+ const pose=meleePose(i),last=meleeHistory[i];
+ meleeHistory[i]=pose;
+ if(!pose||!last||pose.bat!==last.bat||pose.knife!==last.knife||now-lastMeleeContact[i]<280)return;
+ const {bat,knife,tip}=pose;
+ const travel=tip.clone().sub(last.tip);
+ const speed=travel.length()/Math.max(dt,.008);
+ if(speed<(bat?1.6:knife?1.2:1.65)||speed>25)return;
+ const reach=bat?.24:knife?.16:.21;
+ let hit=null,hitDistance=reach*reach;
+ for(const p of players){
+  if(!p.model||(!p.alive&&!p.ragdollParts))continue;
+  const targets=p.ragdollParts?
+   [...p.ragdollParts.values()].map(part=>({part,bone:part.bone,center:new THREE.Vector3().copy(part.body.position)})):
+   (p.meleeBones??=(function(){
+    const bones=[];
+    p.model.traverse(o=>{if(o.isBone&&/(head|neck|spine|pelvis|chest|upperarm|thigh)/i.test(o.name))bones.push(o)});
+    return bones;
+   })()).map(bone=>({bone,center:bone.getWorldPosition(new THREE.Vector3())}));
+  for(const {part,bone,center} of targets){
+   const distance=segmentDistanceSquared(center,last.tip,tip);
+   if(distance<hitDistance){hitDistance=distance;hit={p,part,bone,center}}
   }
  }
- previousMeleeHand=hand;previousMeleeTip=tip;previousMeleeWeapon=equipped;
+ if(!hit)return;
+ lastMeleeContact[i]=now;
+ enterBrawl();
+ const {p,part,bone,center}=hit;
+ const direction=travel.normalize();
+ const force=bat?Math.min(11,4+speed):knife?Math.min(9,3+speed*.8):Math.min(7,2+speed*.6);
+ if(!p.dead)p.health=Math.max(0,p.health-(bat?2:knife?3:1));
+ const injury=wound(p,force,center);
+ bruise(p,bone,center,direction);
+ bloodBurst(center,direction,knife?force*2.2:force);
+ beep(injury.includes('FRACTURED')?78:116,.105,'triangle');
+ if(part){
+  part.body.wakeUp();
+  if(part.rotationLimit&&injury.includes('FRACTURED')){
+   part.rotationLimit.angle=Math.max(part.rotationLimit.angle,1.9);
+   part.rotationLimit.twistAngle=Math.max(part.rotationLimit.twistAngle,.8);
+  }
+  part.body.applyImpulse(new CANNON.Vec3(direction.x*force,direction.y*force,direction.z*force));
+ }
+ if(!p.dead&&p.health<=0){
+  p.dead=true;p.alive=false;state.kos++;
+  buildRagdoll(p,direction.clone().multiplyScalar(force));
+  hud();announce('KNOCKDOWN');
+ }else if(p.alive){
+  registerThreat(p,.8,now);
+  p.staggerUntil=now+450;
+  p.lastAttack=now+900;
+  playCharacter(p,'hit');
+  announce(injury);
+ }
+ const source=[...renderer.xr.getSession().inputSources].find(s=>s.handedness===(i===0?'left':'right'));
+ source?.gamepad?.hapticActuators?.[0]?.pulse?.(Math.min(1,force/8),45)?.catch?.(()=>{});
 }
 const turnAxis = new THREE.Vector3(0,1,0);
 const headsetPosition = new THREE.Vector3();
@@ -850,11 +914,7 @@ function updateLocomotion(left,right,dt){
  if(turn||!locomotionStarts.equals(rig.position)){
   rig.updateMatrixWorld(true);
   if(prevBatTip)prevBatTip=controller1.localToWorld(new THREE.Vector3(0,0,-.92));
-  if(previousMeleeHand)previousMeleeHand=controller1.getWorldPosition(new THREE.Vector3());
-  if(previousMeleeTip){
-   const reach=batHeld&&weaponKind==='BAT'?.85:knifeHeld&&weaponKind==='KNIFE'?.28:0;
-   previousMeleeTip=controller1.localToWorld(new THREE.Vector3(0,0,-reach));
-  }
+  for(let i=0;i<2;i++)if(meleeHistory[i])meleeHistory[i]=meleePose(i);
   controller1.userData.prevPosition=controller1.getWorldPosition(new THREE.Vector3());
   controller1.userData.prevRotation=controller1.getWorldQuaternion(new THREE.Quaternion());
  }
@@ -870,7 +930,7 @@ else if(ball.position.y<.12){
  state.flying=false;
  if(ball){scene.remove(ball);ball=null}
 }}
-const session=renderer.xr.getSession();if(session){if(controller1.parent)trackedMelee(now,dt);
+const session=renderer.xr.getSession();if(session){
  const rightVelocity=controller1.getWorldPosition(new THREE.Vector3());const prevVelocity=controller1.userData.prevPosition;
  controller1.userData.releaseVelocity=prevVelocity?rightVelocity.clone().sub(prevVelocity).divideScalar(Math.max(dt,.008)).clampLength(0,14):new THREE.Vector3();controller1.userData.prevPosition=rightVelocity;
  const currentRot=controller1.getWorldQuaternion(new THREE.Quaternion());const previousRot=controller1.userData.prevRotation;
@@ -882,7 +942,7 @@ const session=renderer.xr.getSession();if(session){if(controller1.parent)tracked
  if(right){
   const b=right.gamepad.buttons;
   const grip=!!b[1]?.pressed;
-  edge('rightGrip',grip,()=>{if(state.mode==='BAT'&&weaponKind==='BAT')grabNearbyBat();else if(!pickupKnife()&&!grabNPC(1))grabNearbyBat()});
+  edge('rightGrip',grip,()=>{if(!grabNPC(1)&&!pickupKnife())grabNearbyBat()});
   if(!grip){releaseNPCGrip(1);if(batHeld)releaseHeldBat();if(knifeHeld)dropKnife()}weapon.visible=batHeld&&weaponKind==='BAT'&&importedBatReady;
   edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BAT')takePitch();else if(!batHeld&&!knifeHeld)switchWeapon()});
   edge('rightB',!!b[5]?.pressed,()=>{toggle()});
@@ -902,6 +962,8 @@ const session=renderer.xr.getSession();if(session){if(controller1.parent)tracked
   edge('leftX',!!b[4]?.pressed,()=>{document.getElementById('gameMode').click()});
   edge('leftY',!!b[5]?.pressed,()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF');announce('AI '+(aiOn?'ON':'OFF'))});
  }
+ if(left)trackedMelee(0,now,dt);else meleeHistory[0]=null;
+ if(right)trackedMelee(1,now,dt);else meleeHistory[1]=null;
  if(!batHeld)prevBatTip=null;
  updateLocomotion(left,right,dt);
 }
@@ -916,7 +978,7 @@ for(const mixer of mixers)mixer.update(dt);updateNeckReactions(now);for(const fa
 for(const p of players){
  if(!p.ragdollParts)continue;
  p.fallTime+=dt;
- if(p.fallTime>7&&!npcGrips.some(g=>g?.p===p)){recoverNPC(p);continue}
+ if(!p.dead&&p.fallTime>7&&!npcGrips.some(g=>g?.p===p)){recoverNPC(p);continue}
  // Prevent excessive velocity and perpetual ragdoll jitter after impact.
  for(const part of p.ragdollParts.values()){
   const b=part.body;
