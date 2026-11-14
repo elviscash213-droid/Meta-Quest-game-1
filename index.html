@@ -77,7 +77,7 @@ const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(.85,
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Mesh(new THREE.PlaneGeometry(1.12,.28),new THREE.MeshBasicMaterial({map:vrTexture,transparent:true,depthTest:false}));vrBoard.position.set(0,-.49,-1.7);vrBoard.renderOrder=10;camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
-function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=errors.length?errors[errors.length-1]:'SYSTEM OK · ASSETS: '+(loadStatus?.textContent||'pending');vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('GRIP NPC WITH EITHER HAND · SWING FREE HAND TO PUNCH',25,218);vrTexture.needsUpdate=true}
+function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCtx.clearRect(0,0,1024,256);vrCtx.fillStyle='rgba(3,14,28,.82)';vrCtx.fillRect(0,0,1024,256);vrCtx.fillStyle=errors.length?'#ffb0b0':'#e4f6ff';vrCtx.font='bold 35px sans-serif';vrCtx.fillText('NO RULES BASEBALL · '+state.inning+'/9 · '+state.home+':'+state.away+' · HP '+playerHP,25,55);vrCtx.font='27px sans-serif';vrCtx.fillText('MODE '+state.mode+' · HR '+state.hr+' · KOs '+state.kos+' · OUTS '+state.outs,25,110);vrCtx.fillStyle=errors.length?'#ff7777':'#a5e6b8';const e=lastVRMessage;vrCtx.fillText(e.slice(0,76),25,170);vrCtx.font='20px sans-serif';vrCtx.fillStyle='#dcecff';vrCtx.fillText('RIGHT GRIP GUN · RIGHT TRIGGER FIRE · LEFT GRIP HIP MAG',25,218);vrTexture.needsUpdate=true}
 
 
 // Baseball diamond reference positions in metres, centered on home plate.
@@ -486,7 +486,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='quest-imported-equipment-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='quest-imported-guns-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -613,7 +613,7 @@ function finishGame(){state.gameOver=true;state.flying=false;announce('FINAL · 
 
 // No procedural baseball mesh. Ball physics are disabled until an imported ball is loaded.
 const ballGeo=null,ballMat=null;let importedBall=null;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33765/v1/model.glb',g=>{importedBall=g.scene;loadStatus.textContent+=' · BASEBALL IMPORTED'},undefined,e=>reportError('Baseball import',e));
-function announce(t){if(/HOME RUN|KNOCKDOWN|FRACTURED|CRACK|STRIKE THREE/.test(t))beep(340,.14);document.getElementById('msg').textContent=t;setTimeout(()=>{if(document.getElementById('msg').textContent===t)document.getElementById('msg').textContent=''},1500)}
+function announce(t){lastVRMessage=t;if(/HOME RUN|KNOCKDOWN|FRACTURED|CRACK|STRIKE THREE/.test(t))beep(340,.14);document.getElementById('msg').textContent=t;setTimeout(()=>{if(document.getElementById('msg').textContent===t)document.getElementById('msg').textContent=''},1500)}
 function hud(){document.getElementById('score').textContent='INNING '+state.inning+' / 9 · HOME '+state.home+' : AWAY '+state.away;document.getElementById('status').textContent='HR '+state.hr+' · KOs '+state.kos+' · HP '+playerHP+' · OUTS '+state.outs;document.getElementById('mode').textContent='MODE: '+state.mode;count()}
 function isFairBall(position){
  return position.z<0&&Math.abs(position.x)<=-position.z+.15;
@@ -663,9 +663,9 @@ for(let i=0;i<2;i++){
   if(data.handedness==='right')tracked.add(controller1);
  });
  tracked.addEventListener('disconnected',({data})=>{
-  if(data.handedness==='left'){releaseNPCGrip(0);questButtons.leftGrip=false;controller0.removeFromParent()}
+  if(data.handedness==='left'){releaseNPCGrip(0);returnMagazine();questButtons.leftGrip=false;controller0.removeFromParent()}
   if(data.handedness==='right'){
-   releaseNPCGrip(1);if(batHeld)releaseHeldBat();if(knifeHeld)dropKnife();
+   releaseNPCGrip(1);if(batHeld)releaseHeldBat();if(knifeHeld)dropKnife();releaseGun();
    questButtons.rightGrip=false;controller1.removeFromParent();
   }
  });
@@ -726,6 +726,136 @@ const knifeAsset='https://raw.githubusercontent.com/Hidencod/tge-assets/main/pac
 new GLTFLoader().load(knifeAsset,g=>{knifeObject=g.scene;const bounds=new THREE.Box3().setFromObject(knifeObject);const size=bounds.getSize(new THREE.Vector3());knifeObject.scale.setScalar(.3/Math.max(size.x,size.y,size.z,.001));knifeObject.position.set(1.1,.85,-1.3);scene.add(knifeObject);knifeReady=true;announce('IMPORTED KNIFE AVAILABLE · GRIP TO PICK UP')},undefined,e=>reportError('Imported knife',e));
 function pickupKnife(){if(!knifeReady||knifeHeld||!knifeObject||batHeld)return false;const pos=controller1.getWorldPosition(new THREE.Vector3());if(knifeObject.getWorldPosition(new THREE.Vector3()).distanceTo(pos)>.65)return false;if(knifeBody){physics.removeBody(knifeBody);knifeBody=null}scene.attach(knifeObject);controller1.attach(knifeObject);knifeObject.position.set(0,-.055,-.16);knifeObject.rotation.set(-Math.PI/2,0,0);knifeHeld=true;weaponKind='KNIFE';state.mode='BRAWL';document.getElementById('weaponSwitch').textContent='WEAPON: KNIFE';announce('KNIFE GRIPPED');return true}
 function dropKnife(){if(!knifeHeld||!knifeObject)return;knifeObject.updateMatrixWorld(true);scene.attach(knifeObject);knifeHeld=false;const p=knifeObject.position;knifeBody=new CANNON.Body({mass:.35,shape:new CANNON.Box(new CANNON.Vec3(.035,.025,.14)),linearDamping:.16,angularDamping:.2});knifeBody.position.set(p.x,p.y,p.z);const v=controller1.userData.releaseVelocity||new THREE.Vector3();knifeBody.velocity.set(v.x,v.y,v.z);physics.addBody(knifeBody);announce('KNIFE DROPPED')}
+
+// Imported models from 3DAssets.dev Mega Weapon Pack. All ammunition state is virtual.
+const gunRack=new THREE.Group();
+scene.add(gunRack);
+const hip=new THREE.Group();
+hip.visible=false;
+scene.add(hip);
+const guns=[];
+let heldGun=null,heldMagazine=null;
+const gunLoader=new GLTFLoader();
+for(const spec of [
+ {name:'SERVICE PISTOL',model:33296,magazine:33390,capacity:12,x:-2.05,gripY:.075,gripZ:-.05,muzzle:.16},
+ {name:'STANDARD RIFLE',model:33318,magazine:33391,capacity:24,x:2.05,gripY:.115,gripZ:-.17,muzzle:.59}
+]){
+ const load=id=>gunLoader.loadAsync('https://cdn.3dassets.dev/assets/'+id+'/v1/model.glb');
+ Promise.all([load(spec.model),load(spec.magazine)]).then(([model,magazine])=>{
+  const root=new THREE.Group();
+  model.scene.rotation.y=Math.PI;
+  model.scene.position.set(0,-spec.gripY,spec.gripZ);
+  root.add(model.scene);
+  const socket=new THREE.Vector3();
+  const inserted=model.scene.getObjectByName('magazine');
+  if(!inserted)throw new Error('Imported magazine node missing');
+  socket.copy(root.worldToLocal(inserted.getWorldPosition(new THREE.Vector3())));
+  const spare=new THREE.Group();
+  const bounds=new THREE.Box3().setFromObject(magazine.scene);
+  magazine.scene.position.sub(bounds.getCenter(new THREE.Vector3()));
+  spare.add(magazine.scene);
+  spare.position.set(-.23,-.015,spec.model===33296?.08:-.10);
+  hip.add(spare);
+  gunRack.add(root);
+  root.position.set(spec.x,.94,-2.15);
+  guns.push({...spec,root,inserted,socket,spare,rounds:spec.capacity});
+ }).catch(error=>reportError('Imported '+spec.name,error));
+}
+function gunStatus(){
+ if(heldGun)announce(heldGun.name+' · '+heldGun.rounds+'/'+heldGun.capacity);
+}
+function pickupGun(){
+ if(heldGun||batHeld||knifeHeld)return false;
+ const hand=controller1.getWorldPosition(new THREE.Vector3());
+ const gun=guns.find(item=>item.root.getWorldPosition(new THREE.Vector3()).distanceTo(hand)<.47);
+ if(!gun)return false;
+ controller1.add(gun.root);
+ gun.root.position.set(0,0,0);
+ gun.root.rotation.set(0,0,0);
+ heldGun=gun;
+ gunStatus();
+ return true;
+}
+function releaseGun(){
+ if(!heldGun)return;
+ const gun=heldGun;
+ heldGun=null;
+ gunRack.add(gun.root);
+ gun.root.position.set(gun.x,.94,-2.15);
+ gun.root.rotation.set(0,0,0);
+}
+function returnMagazine(){
+ if(!heldMagazine)return;
+ const gun=heldMagazine;
+ hip.add(gun.spare);
+ gun.spare.position.set(-.23,-.015,gun.model===33296?.08:-.10);
+ gun.spare.rotation.set(0,0,0);
+ heldMagazine=null;
+}
+function pickupMagazine(){
+ if(!heldGun||heldMagazine)return false;
+ const hand=controller0.getWorldPosition(new THREE.Vector3());
+ const gun=guns.find(item=>item.spare.getWorldPosition(new THREE.Vector3()).distanceTo(hand)<.27);
+ if(!gun)return false;
+ controller0.add(gun.spare);
+ gun.spare.position.set(0,0,-.06);
+ gun.spare.rotation.set(0,0,0);
+ heldMagazine=gun;
+ gun.mismatch=false;
+ return true;
+}
+function updateGunInventory(){
+ const head=renderer.xr.getCamera();
+ const headPose=new THREE.Vector3().setFromMatrixPosition(head.matrixWorld);
+ const yaw=new THREE.Euler(0,0,0,'YXZ').setFromRotationMatrix(head.matrixWorld).y;
+ hip.position.copy(headPose).add(new THREE.Vector3(0,-.67,.025));
+ hip.rotation.y=yaw;
+ hip.updateMatrixWorld(true);
+ if(!heldGun||!heldMagazine)return;
+ const hand=heldMagazine.spare.getWorldPosition(new THREE.Vector3());
+ const socket=heldGun.root.localToWorld(heldGun.socket.clone());
+ if(hand.distanceTo(socket)>.17)return;
+ if(heldMagazine!==heldGun){if(!heldMagazine.mismatch)announce('WRONG MAGAZINE');heldMagazine.mismatch=true;return}
+ heldGun.rounds=heldGun.capacity;
+ heldGun.inserted.visible=true;
+ returnMagazine();
+ beep(480,.07);
+ gunStatus();
+}
+function arcadeFire(){
+ if(!heldGun||state.gameOver)return;
+ const gun=heldGun;
+ if(!gun.rounds){beep(160,.035);announce('EMPTY · GRAB MATCHING HIP MAGAZINE');return}
+ enterBrawl();
+ gun.rounds--;
+ gun.inserted.visible=gun.rounds>0;
+ beep(gun.model===33296?105:76,.11,'sawtooth');
+ gunStatus();
+ const origin=gun.root.localToWorld(new THREE.Vector3(0,.07,-gun.muzzle));
+ const forward=gun.root.localToWorld(new THREE.Vector3(0,.07,-gun.muzzle-1)).sub(origin).normalize();
+ const ray=new THREE.Ray(origin,forward);
+ const impact=new THREE.Vector3();
+ let limit=28;
+ for(const box of stadiumColliders)if(ray.intersectBox(box,impact))limit=Math.min(limit,impact.distanceTo(origin));
+ let hit=null;
+ for(const p of players){
+  if(!p.alive||!p.model)continue;
+  const sphere=new THREE.Sphere(p.group.position.clone().add(new THREE.Vector3(0,1.05,0)),.65);
+  if(!ray.intersectSphere(sphere,impact))continue;
+  const distance=impact.distanceTo(origin);
+  if(distance<limit){limit=distance;hit=p}
+ }
+ if(!hit)return;
+ hit.health=Math.max(0,hit.health-2);
+ const point=ray.at(limit,new THREE.Vector3());
+ bloodBurst(point,forward,3);
+ registerThreat(hit,1,performance.now());
+ if(hit.health===0){
+  hit.dead=true;hit.alive=false;state.kos++;
+  buildRagdoll(hit,forward);
+ }else playCharacter(hit,'hit');
+ hud();
+}
 
 function addEquipment(stadium,node,name,length,mass,position){
  const source=stadium.getObjectByName(node);
@@ -797,8 +927,8 @@ function grabNearbyBat(){
  document.getElementById('weaponSwitch').textContent='WEAPON: '+name;
  announce(name+' GRIPPED');
 }let importedBatReady=false;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33763/v1/model.glb',g=>{const bat=g.scene;bat.rotation.x=-Math.PI/2;bat.position.set(0,0,-.4);if(weapon.children.length)parkReserveBat(bat);else {weapon.add(bat);importedBatReady=true}loadStatus.textContent+=' · BAT IMPORTED'},undefined,e=>reportError('Bat import',e));
-renderer.xr.addEventListener('sessionstart',()=>{document.body.classList.add('in-vr');modelStatus.textContent='VR session started';loadStatus.style.display='none';modelStatus.style.display='none'});
-renderer.xr.addEventListener('sessionend',()=>{meleeHistory.fill(null);releaseNPCGrip(0);releaseNPCGrip(1);document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now();const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
+renderer.xr.addEventListener('sessionstart',()=>{document.body.classList.add('in-vr');hip.visible=true;modelStatus.textContent='VR session started';loadStatus.style.display='none';modelStatus.style.display='none'});
+renderer.xr.addEventListener('sessionend',()=>{meleeHistory.fill(null);releaseNPCGrip(0);releaseNPCGrip(1);releaseGun();returnMagazine();hip.visible=false;document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now();const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
 const batNear=new THREE.Vector3(),batFar=new THREE.Vector3(),batMotion=new THREE.Vector3(),batClosest=new THREE.Vector3();
 function segmentDistanceSquared(p,a,b){const ab=b.clone().sub(a);const len=ab.lengthSq();const t=len>1e-8?THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/len,0,1):0;batClosest.copy(a).addScaledVector(ab,t);return p.distanceToSquared(batClosest)}
 function physicalBatContact(now,dt){
@@ -858,7 +988,7 @@ function enterBrawl(){
 }
 function meleePose(i){
  const controller=i===0?controller0:controller1;
- if(!controller.parent||npcGrips[i])return null;
+ if(!controller.parent||npcGrips[i]||(i===0?heldMagazine:heldGun))return null;
  const bat=i===1&&batHeld&&weaponKind==='BAT'&&importedBatReady;
  const knife=i===1&&knifeHeld&&weaponKind==='KNIFE';
  const reach=bat?(weapon.children[0]?.userData.equipment?.length??.85):knife?.28:.075;
@@ -976,6 +1106,7 @@ else if(ball.position.y<.12){
  if(ball){scene.remove(ball);ball=null}
 }}
 const session=renderer.xr.getSession();if(session){
+ updateGunInventory();
  const rightVelocity=controller1.getWorldPosition(new THREE.Vector3());const prevVelocity=controller1.userData.prevPosition;
  controller1.userData.releaseVelocity=prevVelocity?rightVelocity.clone().sub(prevVelocity).divideScalar(Math.max(dt,.008)).clampLength(0,14):new THREE.Vector3();controller1.userData.prevPosition=rightVelocity;
  const currentRot=controller1.getWorldQuaternion(new THREE.Quaternion());const previousRot=controller1.userData.prevRotation;
@@ -987,11 +1118,11 @@ const session=renderer.xr.getSession();if(session){
  if(right){
   const b=right.gamepad.buttons;
   const grip=!!b[1]?.pressed;
-  edge('rightGrip',grip,()=>{if(!grabNPC(1)&&!pickupKnife())grabNearbyBat()});
-  if(!grip){releaseNPCGrip(1);if(batHeld)releaseHeldBat();if(knifeHeld)dropKnife()}weapon.visible=batHeld&&weaponKind==='BAT'&&importedBatReady;
-  edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BAT')takePitch();else if(!batHeld&&!knifeHeld)switchWeapon()});
+  edge('rightGrip',grip,()=>{if(!pickupGun()&&!grabNPC(1)&&!pickupKnife())grabNearbyBat()});
+  if(!grip){releaseGun();releaseNPCGrip(1);if(batHeld)releaseHeldBat();if(knifeHeld)dropKnife()}weapon.visible=batHeld&&weaponKind==='BAT'&&importedBatReady;
+  edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BAT')takePitch();else if(!batHeld&&!knifeHeld&&!heldGun)switchWeapon()});
   edge('rightB',!!b[5]?.pressed,()=>{toggle()});
-  edge('rightTrigger',!!b[0]?.pressed,()=>{if(state.mode==='BAT')takePitch()});
+  edge('rightTrigger',!!b[0]?.pressed,()=>{if(heldGun)arcadeFire();else if(state.mode==='BAT')takePitch()});
   if(batHeld&&weaponKind==='BAT'&&importedBatReady){
    const tip=controller1.localToWorld(new THREE.Vector3(0,0,-.92));
    physicalBatContact(now,dt);
@@ -1000,10 +1131,10 @@ const session=renderer.xr.getSession();if(session){
  }
  if(left){
   const b=left.gamepad.buttons;
-  edge('leftTrigger',!!b[0]?.pressed,pitch);
+  edge('leftTrigger',!!b[0]?.pressed,()=>{if(!heldGun)pitch()});
   const leftGrip=!!b[1]?.pressed;
-  edge('leftGrip',leftGrip,()=>grabNPC(0));
-  if(!leftGrip)releaseNPCGrip(0);
+  edge('leftGrip',leftGrip,()=>{if(!pickupMagazine())grabNPC(0)});
+  if(!leftGrip){returnMagazine();releaseNPCGrip(0)}
   edge('leftX',!!b[4]?.pressed,()=>{document.getElementById('gameMode').click()});
   edge('leftY',!!b[5]?.pressed,()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF');announce('AI '+(aiOn?'ON':'OFF'))});
  }
