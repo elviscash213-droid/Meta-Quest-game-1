@@ -58,7 +58,7 @@ function updateVRBoard(now){if(now-lastVRUpdate<350)return;lastVRUpdate=now;vrCt
 
 
 const playerPositions=[[0,-8],[-10,-5],[10,-5],[0,-15],[0,-24],[14,-17],[-14,-17],[19,-27],[-19,-27]];
-const players=playerPositions.map(([x,z],i)=>person(x,z,i===0?red:blue));
+const players=playerPositions.map(([x,z],i)=>person(x,z));
 let aiOn=true,ruleMode='CHAOS',lastAI=0,playerHP=100,enemyHits=0;
 const initialPositions=playerPositions.map(([x,z])=>new THREE.Vector3(x,0,z));
 document.getElementById('aiToggle').onclick=()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF')};
