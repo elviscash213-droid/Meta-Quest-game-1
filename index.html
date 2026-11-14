@@ -274,7 +274,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-dual-hand-npc-grab-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-imported-controller-hands-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -424,6 +424,43 @@ const controller0=renderer.xr.getController(0),controller1=renderer.xr.getContro
   }
  }).catch(e=>reportError('Imported WebXR hand models',e));
 
+// Third-party Valve hand GLBs from Godot OpenXR; BSD-style license in source repository.
+// Controller-driven models are independent of optical hand tracking.
+const controllerHands=[null,null],handCurl=[0,0];
+const handSource='https://raw.githubusercontent.com/GodotVR/godot_openxr_for_godot_3.x/master/demo/addons/godot-openxr/assets/valve_hand_models/';
+for(let i=0;i<2;i++){
+ const url=handSource+(i===0?'left_hand.glb':'right_hand.glb');
+ new GLTFLoader().load(url,g=>{
+  const root=g.scene;
+  root.scale.setScalar(1);
+  (i===0?controller0:controller1).add(root);
+  const fingers=[];
+  root.traverse(o=>{
+   if(o.isBone&&/(thumb|index|middle|ring|pinky|little|finger)/i.test(o.name)){
+    fingers.push({bone:o,rest:o.quaternion.clone(),name:o.name.toLowerCase()});
+   }
+  });
+  controllerHands[i]={root,fingers};
+  console.info('Imported Valve controller hand',i,'finger bones',fingers.length);
+ },undefined,e=>reportError('Controller hand import '+i,e));
+}
+function updateControllerHands(dt){
+ const session=renderer.xr.getSession();if(!session)return;
+ for(let i=0;i<2;i++){
+  const model=controllerHands[i];if(!model)continue;
+  const handed=i===0?'left':'right';
+  const source=[...session.inputSources].find(x=>x.handedness===handed&&x.gamepad);
+  const buttons=source?.gamepad?.buttons;
+  const target=buttons?.[1]?.value||0;
+  handCurl[i]=THREE.MathUtils.damp(handCurl[i],target,16,dt);
+  const trigger=buttons?.[0]?.value||0;
+  for(const finger of model.fingers){
+   const amount=/(index)/.test(finger.name)?trigger:handCurl[i];
+   const bend=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),amount*.85);
+   finger.bone.quaternion.copy(finger.rest).multiply(bend);
+  }
+ }
+}
 // Quest controls: left trigger pitches; right trigger attacks only in fist mode.
 controller0.addEventListener('selectstart',pitch);
 controller1.addEventListener('selectstart',()=>{if(state.mode!=='BRAWL'){state.mode='BRAWL';hud();announce('FIGHT MODE · SWING OR TRIGGER TO STRIKE')}combatHit()});
@@ -513,7 +550,7 @@ function trackedMelee(now,dt){
  }
  previousMeleeHand=hand.clone();previousMeleeTip=tip.clone();
 }
-renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;
+renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;updateControllerHands(dt);
 if(state.flying&&ball){ball.position.addScaledVector(velocity,dt);velocity.y-=9.81*dt;if(ball.position.z>4&&velocity.z>0){takePitch()}
 else if(ball.position.y<.12){if(state.contact&&velocity.z<0&&ball.position.z<-75){state.hr++;advance(4)}else if(state.contact&&velocity.z<0){const distance=-ball.position.z;advance(distance>55?3:distance>32?2:1)}else if(!state.contact){takePitch()}else out();state.flying=false;if(ball){scene.remove(ball);ball=null}}}
 const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
