@@ -175,6 +175,25 @@ function updateFallbackPose(rig,dt){
  pose(rig.limbs.leftLeg,swing,0);
  pose(rig.limbs.rightLeg,-swing,0);
 }
+// Licensed third-party MIT skeleton-only animation imports for the same Biped rig.
+const motionFiles={idle:'m_idle_neutral_01.glb',walk:'m_walk_neutral_01.glb',run:'m_run_neutral_01.glb'};
+const sharedMotions={};
+Promise.all(Object.entries(motionFiles).map(async([name,file])=>{
+ try{
+  const motion=await athleteLoader.loadAsync('https://models.codelove.in/animations/'+file);
+  if(!motion.animations.length)throw new Error('No clips in '+file);
+  sharedMotions[name]=motion.animations[0];
+ }catch(e){reportError('Imported motion '+name,e)}
+})).then(()=>{
+ for(const p of [...players,...(playerAvatar?[playerAvatar]:[])]){
+  if(!p.model||!p.mixer)continue;
+  if(p.fallbackRig){const index=fallbackRigs.indexOf(p.fallbackRig);if(index>=0)fallbackRigs.splice(index,1);p.fallbackRig=null}
+  p.actions=p.actions||{};p.clips=p.clips||{};
+  for(const [name,clip] of Object.entries(sharedMotions)){p.actions[name]=p.mixer.clipAction(clip);p.clips[name]=name}
+  if(p.actions.idle){p.currentAction?.stop();p.currentAction=p.actions.idle;p.currentAction.reset().play()}
+ }
+ modelStatus.textContent='IMPORTED MOTIONS: '+Object.keys(sharedMotions).join(', ')+' · '+players.length+' NPCs';
+});
 let athletesLoaded=0;
 athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
  import('three/addons/utils/SkeletonUtils.js').then(({clone})=>{
@@ -190,8 +209,9 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    model.position.set(-box.getCenter(new THREE.Vector3()).x*scale,-box.min.y*scale,-box.getCenter(new THREE.Vector3()).z*scale);
    model.rotation.y=Math.PI;
    p.group.add(model);p.model=model;
+   if(Object.keys(sharedMotions).length){p.fallbackRig=null;}
    p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
-   if(!gltf.animations.length)p.fallbackRig=setupFallbackPose(model);
+   if(!gltf.animations.length&&!Object.keys(sharedMotions).length)p.fallbackRig=setupFallbackPose(model);
    p.actions={};for(const clip of gltf.animations)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
    const idle=gltf.animations.find(c=>/idle|stand|breath|walk|run/i.test(c.name))||gltf.animations[0];
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
@@ -210,7 +230,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
     bodyAnchor.position.set(0,0,0);
     // Hide the player's own avatar in flat-screen preview and when the camera is inside it.
     playerAvatar={anchor:bodyAnchor,model:avatar,mixer:new THREE.AnimationMixer(avatar)};
-    if(!gltf.animations.length)playerAvatar.fallbackRig=setupFallbackPose(avatar);
+    if(!gltf.animations.length&&!Object.keys(sharedMotions).length)playerAvatar.fallbackRig=setupFallbackPose(avatar);
     mixers.push(playerAvatar.mixer);
     const idle=gltf.animations.find(c=>/idle|stand|breath|walk/i.test(c.name))||gltf.animations[0];
     if(idle)playerAvatar.mixer.clipAction(idle).play();
