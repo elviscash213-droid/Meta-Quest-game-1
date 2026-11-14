@@ -354,7 +354,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-ragdoll-joint-and-blood-decal-fixes-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-imported-pickup-knife-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -489,7 +489,7 @@ if(!ball||!state.flying){announce('WAIT FOR PITCH');return}
 // Debug button simulates a timed swing; VR hits require actual tracked bat contact.
 if(renderer.xr.isPresenting){announce('SWING THE TRACKED BAT');return}
 const d=ball.position.distanceTo(new THREE.Vector3(0,1.5,0));if(d<.65){velocity.set((Math.random()-.5)*9,12+Math.random()*7,-19-Math.random()*17);state.contact=true;announce('CRACK!')}else{strike();announce('SWING AND MISS')}}
-function switchWeapon(){state.mode='BRAWL';weaponKind=weaponKind==='BAT'?'FISTS':'BAT';document.getElementById('weaponSwitch').textContent='WEAPON: '+weaponKind;weapon.visible=weaponKind==='BAT'&&batHeld;announce(weaponKind+' EQUIPPED')}
+function switchWeapon(){state.mode='BRAWL';weaponKind=weaponKind==='BAT'?'KNIFE':weaponKind==='KNIFE'?'FISTS':'BAT';document.getElementById('weaponSwitch').textContent='WEAPON: '+weaponKind;weapon.visible=weaponKind==='BAT'&&batHeld;announce(weaponKind+' EQUIPPED')}
 document.getElementById('weaponSwitch').onclick=switchWeapon;
 function toggle(){state.mode=state.mode==='BAT'?'BRAWL':'BAT';hud();announce(state.mode==='BRAWL'?'BRAWL · NPCS APPROACHING':'BASEBALL MODE')}
 document.getElementById('pitch').onclick=pitch;document.getElementById('take').onclick=takePitch;document.getElementById('swing').onclick=swing;document.getElementById('mode').onclick=toggle;document.getElementById('reset').onclick=()=>location.reload();
@@ -546,6 +546,12 @@ controller0.addEventListener('selectstart',pitch);
 controller1.addEventListener('selectstart',()=>{if(state.mode!=='BRAWL'){state.mode='BRAWL';hud();announce('FIGHT MODE · SWING OR TRIGGER TO STRIKE')}combatHit()});
 const weapon=new THREE.Group();controller1.add(weapon);weapon.visible=false;
 const droppedWeapons=[];
+let knifeHeld=false,knifeReady=false,knifeObject=null,knifeBody=null,knifeSwingAt=0;
+const knifeAsset='https://raw.githubusercontent.com/Hidencod/tge-assets/main/packs/food-kit/cooking-knife.glb';
+new GLTFLoader().load(knifeAsset,g=>{knifeObject=g.scene;const bounds=new THREE.Box3().setFromObject(knifeObject);const size=bounds.getSize(new THREE.Vector3());knifeObject.scale.setScalar(.3/Math.max(size.x,size.y,size.z,.001));knifeObject.position.set(1.1,.85,-1.3);scene.add(knifeObject);knifeReady=true;announce('IMPORTED KNIFE AVAILABLE · GRIP TO PICK UP')},undefined,e=>reportError('Imported knife',e));
+function pickupKnife(){if(!knifeReady||knifeHeld||!knifeObject||batHeld)return false;const pos=controller1.getWorldPosition(new THREE.Vector3());if(knifeObject.getWorldPosition(new THREE.Vector3()).distanceTo(pos)>.65)return false;if(knifeBody){physics.removeBody(knifeBody);knifeBody=null}scene.attach(knifeObject);controller1.attach(knifeObject);knifeObject.position.set(0,-.055,-.16);knifeObject.rotation.set(-Math.PI/2,0,0);knifeHeld=true;weaponKind='KNIFE';state.mode='BRAWL';document.getElementById('weaponSwitch').textContent='WEAPON: KNIFE';announce('KNIFE GRIPPED');return true}
+function dropKnife(){if(!knifeHeld||!knifeObject)return;knifeObject.updateMatrixWorld(true);scene.attach(knifeObject);knifeHeld=false;const p=knifeObject.position;knifeBody=new CANNON.Body({mass:.35,shape:new CANNON.Box(new CANNON.Vec3(.035,.025,.14)),linearDamping:.16,angularDamping:.2});knifeBody.position.set(p.x,p.y,p.z);const v=controller1.userData.releaseVelocity||new THREE.Vector3();knifeBody.velocity.set(v.x,v.y,v.z);physics.addBody(knifeBody);announce('KNIFE DROPPED')}
+
 function releaseHeldBat(){
  if(!batHeld)return;
  batHeld=false;prevBatTip=null;previousMeleeTip=null;
@@ -602,13 +608,14 @@ function trackedMelee(now,dt){
  if(!renderer.xr.isPresenting||state.gameOver)return;
  const hand=controller1.getWorldPosition(new THREE.Vector3());
  const holdingBat=batHeld&&weaponKind==='BAT'&&importedBatReady;
- const tip=holdingBat?controller1.localToWorld(new THREE.Vector3(0,0,-.85)):hand;
- const previous=holdingBat?previousMeleeTip:previousMeleeHand;
+ const holdingKnife=knifeHeld&&weaponKind==='KNIFE';
+ const tip=holdingBat?controller1.localToWorld(new THREE.Vector3(0,0,-.85)):holdingKnife?controller1.localToWorld(new THREE.Vector3(0,0,-.28)):hand;
+ const previous=(holdingBat||holdingKnife)?previousMeleeTip:previousMeleeHand;
  const speed=previous?tip.distanceTo(previous)/Math.max(dt,.008):0;
- if(previous&&speed>(holdingBat?1.6:1.1)&&now-lastMeleeContact>380){
+ if(previous&&speed>(holdingBat?1.6:holdingKnife?.55:1.1)&&now-lastMeleeContact>380){
   for(const p of players){
    if(!p.alive||!p.model)continue;
-   const reach=holdingBat?.48:.4;
+   const reach=holdingBat?.48:holdingKnife?.22:.4;
    // Imported skeletal bones provide moving anatomical hit targets.
    const joints=[];p.model.traverse(o=>{if(o.isBone&&/(head|neck|spine|pelvis|chest|upperarm|thigh)/i.test(o.name))joints.push(o)});
    const centers=joints.map(b=>b.getWorldPosition(new THREE.Vector3()));
@@ -619,12 +626,12 @@ function trackedMelee(now,dt){
    lastMeleeContact=now;
    state.mode='BRAWL';hud();
    const direction=tip.clone().sub(previous).normalize();
-   const force=holdingBat?Math.min(11,4+speed):Math.min(7,2+speed*.6);
-   p.health-=holdingBat?2:1;registerThreat(p,holdingBat?1.4:.8,now);
+   const force=holdingBat?Math.min(11,4+speed):holdingKnife?Math.min(9,3+speed*.8):Math.min(7,2+speed*.6);
+   p.health-=holdingBat?2:holdingKnife?3:1;registerThreat(p,holdingBat?1.4:.8,now);
    if(p.psyche){p.psyche.fear=Math.min(2,p.psyche.fear+(holdingBat?.55:.25));p.psyche.anger=Math.min(2,p.psyche.anger+.3);p.psyche.memory.lastHitAt=now;p.psyche.decisionAt=0}
    p.lastAttack=now+900;p.staggerUntil=now+Math.min(850,300+force*55);
-   const impact=p.group.position.clone().add(new THREE.Vector3(0,1.2,0));
-   const injury=wound(p,force,impact);bloodBurst(impact,direction,force);
+   const impact=holdingKnife?centers.reduce((a,b)=>segmentDistanceSquared(b,previous,tip)<segmentDistanceSquared(a,previous,tip)?b:a,centers[0]).clone():p.group.position.clone().add(new THREE.Vector3(0,1.2,0));
+   const injury=wound(p,force,impact);bloodBurst(impact,direction,holdingKnife?force*2.2:force);if(holdingKnife&&impact.y>p.group.position.y+1.5){p.health=Math.max(0,p.health-2);p.psyche.fear=2;announce('NECK WOUND')}
    if(p.health<=0){p.alive=false;state.kos++;buildRagdoll(p,direction.multiplyScalar(force));hud();announce('KNOCKDOWN')}
    else{p.group.position.addScaledVector(direction,Math.min(.24,force*.025));playCharacter(p,'hit');announce(injury)}
    break;
@@ -647,8 +654,8 @@ const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
  if(right){
   const b=right.gamepad.buttons;
   const grip=!!b[1]?.pressed;
-  edge('rightGrip',grip,()=>{if(!grabNPC(1))grabNearbyBat()});
-  if(!grip){releaseNPCGrip(1);if(batHeld)releaseHeldBat()}weapon.visible=batHeld&&weaponKind==='BAT'&&importedBatReady;
+  edge('rightGrip',grip,()=>{if(!pickupKnife()&&!grabNPC(1))grabNearbyBat()});
+  if(!grip){releaseNPCGrip(1);if(batHeld)releaseHeldBat();if(knifeHeld)dropKnife()}weapon.visible=batHeld&&weaponKind==='BAT'&&importedBatReady;
   edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BRAWL')switchWeapon();else takePitch()});
   edge('rightB',!!b[5]?.pressed,()=>{toggle()});
   edge('rightTrigger',!!b[0]?.pressed,()=>{if(state.mode==='BRAWL')combatHit()});
@@ -670,6 +677,7 @@ const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.h
 // First-person player has no rendered body.
 enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}controller0.userData.gripDt=dt;controller1.userData.gripDt=dt;
 updateNPCGrips();physics.step(1/60,dt,3);
+if(knifeBody&&knifeObject){knifeObject.position.set(knifeBody.position.x,knifeBody.position.y,knifeBody.position.z);knifeObject.quaternion.set(knifeBody.quaternion.x,knifeBody.quaternion.y,knifeBody.quaternion.z,knifeBody.quaternion.w)}
 for(const item of droppedWeapons){item.mesh.position.set(item.body.position.x,item.body.position.y,item.body.position.z);item.mesh.quaternion.set(item.body.quaternion.x,item.body.quaternion.y,item.body.quaternion.z,item.body.quaternion.w)}
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);if(e.obj.geometry&&!e.obj.isSprite)e.obj.geometry.dispose();e.obj.material?.dispose();effects.splice(i,1)}}
