@@ -127,7 +127,19 @@ function wound(p,force,point){
 }
 function bloodBurst(){} // Await imported effect assets.
 function bloodStain(){} // Await imported decals.
-function buildRagdoll(p,impulse){if(p.ragdoll)return;p.ragdoll=true;p.fallVelocity=impulse.clone().multiplyScalar(.13);p.fallAngular=(Math.random()>.5?1:-1)*2.8;p.fallTime=0;p.group.visible=true;playCharacter(p,'death');announce('PLAYER DOWN')}
+function buildRagdoll(p,impulse){
+ if(p.ragdoll)return;
+ p.ragdoll=true;p.fallTime=0;p.group.visible=true;
+ // A physical root body replaces the former scripted translation and rotation.
+ // This is NOT an articulated ragdoll until skeletal limbs have constrained bodies.
+ const body=new CANNON.Body({mass:75,linearDamping:.23,angularDamping:.55,shape:new CANNON.Sphere(.38)});
+ body.position.set(p.group.position.x,p.group.position.y+1.0,p.group.position.z);
+ body.velocity.set(impulse.x*.6,Math.max(1.5,impulse.y*.55),impulse.z*.6);
+ body.angularVelocity.set(impulse.z*.08,0,-impulse.x*.08);
+ physics.addBody(body);p.fallBody=body;
+ p.mixer?.stopAllAction();p.actionLockUntil=Infinity;
+ announce('PLAYER DOWN');
+}
 function hitEffect(){} // Await imported impact effect.
 function combatHit(){if(state.gameOver)return;
  const now=performance.now();if(now-lastCombat<280)return;lastCombat=now;
@@ -143,7 +155,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-action-lock-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-physics-audit-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -383,8 +395,13 @@ enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive)
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
 for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)updateFallbackPose(fallback,dt);
-for(const p of players){if(!p.ragdoll)continue;p.fallTime+=dt;p.fallVelocity.y-=9.81*dt;p.group.position.addScaledVector(p.fallVelocity,dt);if(p.group.position.y<0){p.group.position.y=0;p.fallVelocity.y=Math.max(0,-p.fallVelocity.y*.18);p.fallVelocity.x*=.93;p.fallVelocity.z*=.93}p.group.rotation.z=Math.max(-Math.PI/2,Math.min(Math.PI/2,p.group.rotation.z+p.fallAngular*dt));if(Math.abs(p.group.rotation.z)>=Math.PI/2)p.fallAngular=0;
-if(p.fallbackRig){p.fallbackRig.moving=false;p.fallbackRig.fallen=true;}}
+for(const p of players){
+ if(!p.ragdoll||!p.fallBody)continue;
+ p.fallTime+=dt;
+ const b=p.fallBody;
+ p.group.position.set(b.position.x,Math.max(0,b.position.y-1.0),b.position.z);
+ p.group.quaternion.set(b.quaternion.x,b.quaternion.y,b.quaternion.z,b.quaternion.w);
+}
 
 if(renderer.xr.isPresenting){vrBoard.visible=true;updateVRBoard(now)}else vrBoard.visible=false;if(importedStadium.children[0]?.userData.mixer)importedStadium.children[0].userData.mixer.update(dt);renderer.render(scene,camera)});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});hud();
