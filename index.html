@@ -143,7 +143,8 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='Loading imported animated players…';document.body.appendChild(modelStatus);
+const BUILD_VERSION='phase1-20261114-0150';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
 const athleteURLs=['https://models.codelove.in/models/sports-male-01.glb','https://models.codelove.in/models/sports-male-02.glb'];
@@ -204,7 +205,7 @@ Promise.all(Object.entries(motionFiles).map(async([name,file])=>{
  }catch(e){reportError('Imported motion '+name,e)}
 })).then(()=>{
  for(const p of [...players,...(playerAvatar?[playerAvatar]:[])])attachSharedMotions(p);
- modelStatus.textContent='IMPORTED MOTIONS: '+(Object.keys(sharedMotions).join(', ')||'NONE — FALLBACK ACTIVE')+' · '+players.length+' NPCs';
+ modelStatus.textContent='BUILD '+BUILD_VERSION+' · MOTIONS '+(Object.keys(sharedMotions).join(', ')||'NONE — FALLBACK ACTIVE')+' · '+players.length+' NPCs';
 });
 let athletesLoaded=0;
 athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
@@ -249,7 +250,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    }
   }
   athletesLoaded++;
-  modelStatus.textContent='ATHLETES '+athletesLoaded+'/2 · EXTERNAL MOTIONS '+(Object.keys(sharedMotions).join(', ')||'LOADING')+' · '+players.length+' ACTORS';
+  modelStatus.textContent='BUILD '+BUILD_VERSION+' · ATHLETES '+athletesLoaded+'/2 · MOTIONS '+(Object.keys(sharedMotions).join(', ')||'LOADING');
  }).catch(e=>reportError('Athlete skeleton cloning',e));
 },undefined,e=>{modelStatus.textContent='ATHLETE IMPORT FAILED · '+url;reportError('Athlete import',e)}));
 function playCharacter(p,name){if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';if(!p.mixer||!p.clips)return;const key=p.clips[name]||p.clips.idle;if(!key)return;const next=p.actions[key.toLowerCase()];if(next&&next!==p.currentAction){next.reset().fadeIn(.22).play();p.currentAction?.fadeOut(.22);p.currentAction=next}}
