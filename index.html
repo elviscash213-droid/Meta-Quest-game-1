@@ -99,10 +99,18 @@ function enemyAI(dt,now){
    p.group.lookAt(p.group.position.x+delta.x,0,p.group.position.z+delta.z);
    playCharacter(p,distance>4?'run':'walk');
   }else playCharacter(p,'idle');
-  if(fighting&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>2600){
-   p.lastAttack=now;playCharacter(p,'attack');playerHP=Math.max(0,playerHP-7);enemyHits++;
-   beep(105,.13,'sawtooth');announce('NPC PUNCH · HEALTH '+playerHP);
-   if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
+  // Attacks are telegraphed; damage lands only if the player remains in range.
+  if(p.pendingAttackAt&&now>=p.pendingAttackAt){
+   p.pendingAttackAt=0;
+   if(fighting&&p.alive&&p.group.position.distanceTo(target)<2.25){
+    playerHP=Math.max(0,playerHP-7);enemyHits++;
+    beep(105,.13,'sawtooth');announce('NPC HIT · HEALTH '+playerHP);hud();
+    if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
+   }
+  }
+  if(fighting&&!p.pendingAttackAt&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>2600){
+   p.lastAttack=now;p.pendingAttackAt=now+550;
+   playCharacter(p,'attack');
   }
  }
  if(nearest&&ball&&state.contact&&state.flying){
@@ -161,7 +169,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-brawl-ai-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-telegraphed-combat-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
