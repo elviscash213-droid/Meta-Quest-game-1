@@ -272,10 +272,40 @@ function physicalBatContact(now,dt){
  velocity.set(THREE.MathUtils.clamp(batMotion.x*tipSpeed*.9,-15,15),Math.min(22,7+tipSpeed*.65),-Math.min(38,13+tipSpeed*1.4));
  state.contact=true;announce('CRACK!');
 }
+// Quest tracked melee: a real hand or imported bat must move through a target.
+let previousMeleeHand=null,previousMeleeTip=null,lastMeleeContact=0;
+function trackedMelee(now,dt){
+ if(!renderer.xr.isPresenting||state.gameOver)return;
+ const hand=controller1.getWorldPosition(new THREE.Vector3());
+ const holdingBat=batHeld&&weaponKind==='BAT'&&importedBatReady;
+ const tip=holdingBat?controller1.localToWorld(new THREE.Vector3(0,0,-.85)):hand;
+ const previous=holdingBat?previousMeleeTip:previousMeleeHand;
+ const speed=previous?tip.distanceTo(previous)/Math.max(dt,.008):0;
+ if(previous&&speed>(holdingBat?1.6:1.1)&&now-lastMeleeContact>380){
+  for(const p of players){
+   if(!p.alive||!p.model)continue;
+   const center=p.group.position.clone().add(new THREE.Vector3(0,1.25,0));
+   const reach=holdingBat?.8:.58;
+   if(segmentDistanceSquared(center,previous,tip)>reach*reach)continue;
+   lastMeleeContact=now;
+   state.mode='BRAWL';hud();
+   const direction=tip.clone().sub(previous).normalize();
+   const force=holdingBat?Math.min(11,4+speed):Math.min(7,2+speed*.6);
+   p.health-=holdingBat?2:1;
+   p.lastAttack=now+900;
+   const impact=p.group.position.clone().add(new THREE.Vector3(0,1.2,0));
+   const injury=wound(p,force,impact);bloodBurst(impact,direction,force);
+   if(p.health<=0){p.alive=false;state.kos++;buildRagdoll(p,direction.multiplyScalar(force));hud();announce('KNOCKDOWN')}
+   else{p.group.position.addScaledVector(direction,.16);playCharacter(p,'run');announce(injury)}
+   break;
+  }
+ }
+ previousMeleeHand=hand.clone();previousMeleeTip=tip.clone();
+}
 renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;
 if(state.flying&&ball){ball.position.addScaledVector(velocity,dt);velocity.y-=9.81*dt;if(ball.position.z>4&&velocity.z>0){takePitch()}
 else if(ball.position.y<.12){if(state.contact&&velocity.z<0&&ball.position.z<-75){state.hr++;advance(4)}else if(state.contact&&velocity.z<0){const distance=-ball.position.z;advance(distance>55?3:distance>32?2:1)}else if(!state.contact){takePitch()}else out();state.flying=false;if(ball){scene.remove(ball);ball=null}}}
-const session=renderer.xr.getSession();if(session){
+const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
  const right=[...session.inputSources].find(s=>s.handedness==='right'&&s.gamepad);
  const left=[...session.inputSources].find(s=>s.handedness==='left'&&s.gamepad);
  function edge(key,pressed,fn){if(pressed&&!questButtons[key])fn();questButtons[key]=!!pressed}
