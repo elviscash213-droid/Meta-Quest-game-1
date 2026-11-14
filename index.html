@@ -354,7 +354,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-imported-pickup-knife-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-neck-wound-skeletal-reaction-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -604,6 +604,33 @@ function physicalBatContact(now,dt){
 }
 // Quest tracked melee: a real hand or imported bat must move through a target.
 let previousMeleeHand=null,previousMeleeTip=null,lastMeleeContact=0;
+// Layered neck-wound reaction on imported skeletal characters; no substitute meshes.
+function triggerNeckReaction(p,now){
+ if(!p.model||p.ragdoll)return;
+ p.neckReaction={start:now,duration:1550,base:null};
+ p.actionLockUntil=Math.max(p.actionLockUntil||0,now+1550);
+ p.pendingAttackAt=0;
+ p.staggerUntil=now+1550;
+ p.psyche.fear=2;
+ playCharacter(p,'hit');
+}
+function updateNeckReactions(now){
+ for(const p of players){
+  const reaction=p.neckReaction;if(!reaction||p.ragdoll)continue;
+  const t=(now-reaction.start)/reaction.duration;
+  if(t>=1){p.neckReaction=null;continue}
+  const spine=p.model?.getObjectByName('spine_03')||p.model?.getObjectByName('spine_02')||p.model?.getObjectByName('spine_01');
+  const neck=p.model?.getObjectByName('neck_01');
+  const left=p.model?.getObjectByName('upperarm_l'),right=p.model?.getObjectByName('upperarm_r');
+  const envelope=Math.sin(Math.PI*Math.min(1,t));
+  const tremor=Math.sin(t*95)*.025*envelope;
+  if(spine)spine.rotation.x+=envelope*.22+tremor;
+  if(neck){neck.rotation.x-=envelope*.16;neck.rotation.z+=tremor}
+  if(left)left.rotation.z+=envelope*.55;
+  if(right)right.rotation.z-=envelope*.55;
+  if(t>.65&&p.health<=0){p.neckReaction=null;p.alive=false;buildRagdoll(p,new THREE.Vector3(0,1.5,0))}
+ }
+}
 function trackedMelee(now,dt){
  if(!renderer.xr.isPresenting||state.gameOver)return;
  const hand=controller1.getWorldPosition(new THREE.Vector3());
@@ -631,7 +658,7 @@ function trackedMelee(now,dt){
    if(p.psyche){p.psyche.fear=Math.min(2,p.psyche.fear+(holdingBat?.55:.25));p.psyche.anger=Math.min(2,p.psyche.anger+.3);p.psyche.memory.lastHitAt=now;p.psyche.decisionAt=0}
    p.lastAttack=now+900;p.staggerUntil=now+Math.min(850,300+force*55);
    const impact=holdingKnife?centers.reduce((a,b)=>segmentDistanceSquared(b,previous,tip)<segmentDistanceSquared(a,previous,tip)?b:a,centers[0]).clone():p.group.position.clone().add(new THREE.Vector3(0,1.2,0));
-   const injury=wound(p,force,impact);bloodBurst(impact,direction,holdingKnife?force*2.2:force);if(holdingKnife&&impact.y>p.group.position.y+1.5){p.health=Math.max(0,p.health-2);p.psyche.fear=2;announce('NECK WOUND')}
+   const injury=wound(p,force,impact);bloodBurst(impact,direction,holdingKnife?force*2.2:force);if(holdingKnife&&impact.y>p.group.position.y+1.5){p.health=Math.max(0,p.health-2);p.psyche.fear=2;triggerNeckReaction(p,now);announce('NECK WOUND')}
    if(p.health<=0){p.alive=false;state.kos++;buildRagdoll(p,direction.multiplyScalar(force));hud();announce('KNOCKDOWN')}
    else{p.group.position.addScaledVector(direction,Math.min(.24,force*.025));playCharacter(p,'hit');announce(injury)}
    break;
@@ -681,7 +708,7 @@ if(knifeBody&&knifeObject){knifeObject.position.set(knifeBody.position.x,knifeBo
 for(const item of droppedWeapons){item.mesh.position.set(item.body.position.x,item.body.position.y,item.body.position.z);item.mesh.quaternion.set(item.body.quaternion.x,item.body.quaternion.y,item.body.quaternion.z,item.body.quaternion.w)}
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);if(e.obj.geometry&&!e.obj.isSprite)e.obj.geometry.dispose();e.obj.material?.dispose();effects.splice(i,1)}}
-for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)updateFallbackPose(fallback,dt);
+for(const mixer of mixers)mixer.update(dt);updateNeckReactions(now);for(const fallback of fallbackRigs)updateFallbackPose(fallback,dt);
 for(const p of players){
  if(!p.ragdollParts)continue;
  p.fallTime+=dt;
