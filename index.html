@@ -200,6 +200,65 @@ function recoverNPC(p){
  p.health=8;p.alive=true;p.actionLockUntil=0;p.pendingAttackAt=0;p.staggerUntil=0;
  playCharacter(p,'idle');
 }
+// Quest grip physics: each hand can constrain an imported NPC's ragdoll limb.
+const npcGrips=[null,null];
+const gripAnchors=[0,1].map(()=>{const b=new CANNON.Body({mass:0,type:CANNON.Body.KINEMATIC,collisionFilterGroup:4,collisionFilterMask:0});physics.addBody(b);return b});
+function releaseNPCGrip(i){
+ const held=npcGrips[i];if(!held)return;
+ physics.removeConstraint(held.joint);npcGrips[i]=null;
+ const hand=(i===0?controller0:controller1);
+ const velocity=hand.userData.releaseVelocity;
+ if(velocity)held.part.body.velocity.vadd(new CANNON.Vec3(velocity.x*.65,velocity.y*.65,velocity.z*.65),held.part.body.velocity);
+ announce('LIMB RELEASED');
+}
+function grabNPC(i){
+ if(npcGrips[i])return true;
+ const hand=(i===0?controller0:controller1),pos=hand.getWorldPosition(new THREE.Vector3());
+ let closest=null,best=.36;
+ for(const p of players){
+  if(!p.model||(!p.alive&&!p.ragdollParts))continue;
+  if(!p.ragdollParts){
+   p.model.updateMatrixWorld(true);
+   p.model.traverse(b=>{
+    if(!b.isBone||!/(head|neck|spine|pelvis|upperarm|lowerarm|thigh|calf|hand)/i.test(b.name))return;
+    const distance=b.getWorldPosition(new THREE.Vector3()).distanceTo(pos);
+    if(distance<best){best=distance;closest={p,boneName:b.name}}
+   });
+  }else for(const [name,part] of p.ragdollParts){
+   const distance=Math.hypot(part.body.position.x-pos.x,part.body.position.y-pos.y,part.body.position.z-pos.z);
+   if(distance<best){best=distance;closest={p,name}}
+  }
+ }
+ if(!closest)return false;
+ const p=closest.p;
+ if(!p.ragdollParts){p.alive=false;buildRagdoll(p,new THREE.Vector3(0,0,0))}
+ if(!p.ragdollParts)return false;
+ let part=closest.name?p.ragdollParts.get(closest.name):null;
+ if(!part){
+  let min=Infinity;
+  for(const candidate of p.ragdollParts.values()){
+   const d=Math.hypot(candidate.body.position.x-pos.x,candidate.body.position.y-pos.y,candidate.body.position.z-pos.z);
+   if(d<min){min=d;part=candidate}
+  }
+ }
+ if(!part)return false;
+ const anchor=gripAnchors[i];anchor.position.set(pos.x,pos.y,pos.z);
+ const pivot=new CANNON.Vec3(pos.x-part.body.position.x,pos.y-part.body.position.y,pos.z-part.body.position.z);
+ const joint=new CANNON.PointToPointConstraint(anchor,new CANNON.Vec3(),part.body,pivot,180);
+ physics.addConstraint(joint);npcGrips[i]={p,part,joint};
+ announce('LIMB GRIPPED');return true;
+}
+function updateNPCGrips(){
+ for(let i=0;i<2;i++){
+  const hand=i===0?controller0:controller1;
+  const pos=hand.getWorldPosition(new THREE.Vector3()),anchor=gripAnchors[i];
+  const old=hand.userData.gripLastPosition;
+  const dt=Math.max(.008,hand.userData.gripDt||.016);
+  const v=old?pos.clone().sub(old).divideScalar(dt).clampLength(0,8):new THREE.Vector3();
+  anchor.velocity.set(v.x,v.y,v.z);anchor.position.set(pos.x,pos.y,pos.z);
+  hand.userData.gripLastPosition=pos.clone();
+ }
+}
 function hitEffect(){} // Await imported impact effect.
 function combatHit(){if(state.gameOver)return;
  const now=performance.now();if(now-lastCombat<280)return;lastCombat=now;
@@ -215,7 +274,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-physical-stagger-joints-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-dual-hand-npc-grab-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -466,8 +525,8 @@ const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
  if(right){
   const b=right.gamepad.buttons;
   const grip=!!b[1]?.pressed;
-  edge('rightGrip',grip,grabNearbyBat);
-  if(!grip&&batHeld)releaseHeldBat();weapon.visible=batHeld&&weaponKind==='BAT'&&importedBatReady;
+  edge('rightGrip',grip,()=>{if(!grabNPC(1))grabNearbyBat()});
+  if(!grip){releaseNPCGrip(1);if(batHeld)releaseHeldBat()}weapon.visible=batHeld&&weaponKind==='BAT'&&importedBatReady;
   edge('rightA',!!b[4]?.pressed,()=>{if(state.mode==='BRAWL')switchWeapon();else takePitch()});
   edge('rightB',!!b[5]?.pressed,()=>{toggle()});
   edge('rightTrigger',!!b[0]?.pressed,()=>{if(state.mode==='BRAWL')combatHit()});
@@ -479,12 +538,16 @@ const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
  }
  if(left){
   const b=left.gamepad.buttons;
+  const leftGrip=!!b[1]?.pressed;
+  edge('leftGrip',leftGrip,()=>grabNPC(0));
+  if(!leftGrip)releaseNPCGrip(0);
   edge('leftX',!!b[4]?.pressed,()=>{document.getElementById('gameMode').click()});
   edge('leftY',!!b[5]?.pressed,()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF');announce('AI '+(aiOn?'ON':'OFF'))});
  }
 const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=Math.abs(a[2]||0)>Math.abs(a[0]||0)?a[2]:a[0],sy=Math.abs(a[3]||0)>Math.abs(a[1]||0)?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*3.6)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(false){buttonHeld=true}}}
 // First-person player has no rendered body.
-enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}physics.step(1/60,dt,3);
+enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}controller0.userData.gripDt=dt;controller1.userData.gripDt=dt;
+updateNPCGrips();physics.step(1/60,dt,3);
 for(const item of droppedWeapons){item.mesh.position.set(item.body.position.x,item.body.position.y,item.body.position.z);item.mesh.quaternion.set(item.body.quaternion.x,item.body.quaternion.y,item.body.quaternion.z,item.body.quaternion.w)}
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
@@ -492,7 +555,7 @@ for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)up
 for(const p of players){
  if(!p.ragdollParts)continue;
  p.fallTime+=dt;
- if(p.fallTime>7){recoverNPC(p);continue}
+ if(p.fallTime>7&&!npcGrips.some(g=>g?.p===p)){recoverNPC(p);continue}
  // Prevent excessive velocity and perpetual ragdoll jitter after impact.
  for(const part of p.ragdollParts.values()){
   const b=part.body;
