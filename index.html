@@ -142,17 +142,45 @@ function wound(p,force,point){
 function bloodBurst(){} // Await imported effect assets.
 function bloodStain(){} // Await imported decals.
 function buildRagdoll(p,impulse){
- if(p.ragdoll)return;
- p.ragdoll=true;p.fallTime=0;p.group.visible=true;
- // A physical root body replaces the former scripted translation and rotation.
- // This is NOT an articulated ragdoll until skeletal limbs have constrained bodies.
- const body=new CANNON.Body({mass:75,linearDamping:.23,angularDamping:.55,shape:new CANNON.Sphere(.38)});
- body.position.set(p.group.position.x,p.group.position.y+1.0,p.group.position.z);
- body.velocity.set(impulse.x*.6,Math.max(1.5,impulse.y*.55),impulse.z*.6);
- body.angularVelocity.set(impulse.z*.08,0,-impulse.x*.08);
- physics.addBody(body);p.fallBody=body;
- p.mixer?.stopAllAction();p.actionLockUntil=Infinity;
- announce('PLAYER DOWN');
+ if(p.ragdoll||!p.model)return;
+ p.model.updateMatrixWorld(true);
+ const defs=[
+  ['pelvis',/^(pelvis|hips)$/i,null,.18,15],
+  ['spine',/^(spine_01|spine|spine1)$/i,'pelvis',.18,12],
+  ['chest',/^(spine_03|spine_02|chest|spine3)$/i,'spine',.18,11],
+  ['head',/^(head)$/i,'chest',.13,5],
+  ['upperarm_l',/^(upperarm_l|leftarm|leftupperarm)$/i,'chest',.10,3],
+  ['lowerarm_l',/^(lowerarm_l|leftforearm|leftlowerarm)$/i,'upperarm_l',.09,2],
+  ['upperarm_r',/^(upperarm_r|rightarm|rightupperarm)$/i,'chest',.10,3],
+  ['lowerarm_r',/^(lowerarm_r|rightforearm|rightlowerarm)$/i,'upperarm_r',.09,2],
+  ['thigh_l',/^(thigh_l|leftupleg|leftthigh)$/i,'pelvis',.14,8],
+  ['calf_l',/^(calf_l|leftleg|leftcalf)$/i,'thigh_l',.11,5],
+  ['thigh_r',/^(thigh_r|rightupleg|rightthigh)$/i,'pelvis',.14,8],
+  ['calf_r',/^(calf_r|rightleg|rightcalf)$/i,'thigh_r',.11,5]
+ ];
+ const bones=[];p.model.traverse(o=>{if(o.isBone)bones.push(o)});
+ const parts=new Map();
+ for(const [id,re,parentId,radius,mass] of defs){
+  const bone=bones.find(b=>re.test(b.name));if(!bone)continue;
+  const world=bone.getWorldPosition(new THREE.Vector3());
+  const quat=bone.getWorldQuaternion(new THREE.Quaternion());
+  const body=new CANNON.Body({mass,shape:new CANNON.Sphere(radius),linearDamping:.22,angularDamping:.65,collisionFilterGroup:2,collisionFilterMask:1});
+  body.position.set(world.x,world.y,world.z);body.quaternion.set(quat.x,quat.y,quat.z,quat.w);
+  physics.addBody(body);parts.set(id,{bone,body,parentId});
+ }
+ if(parts.size<6){for(const part of parts.values())physics.removeBody(part.body);reportError('Ragdoll rig missing limb bones',p.role||'NPC');return}
+ for(const part of parts.values()){
+  const parent=parts.get(part.parentId);if(!parent)continue;
+  const a=parent.body.position,b=part.body.position;
+  const midpoint=new CANNON.Vec3((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
+  const pivotA=midpoint.vsub(a),pivotB=midpoint.vsub(b);
+  physics.addConstraint(new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,1e5));
+ }
+ p.ragdoll=true;p.ragdollParts=parts;p.fallTime=0;p.actionLockUntil=Infinity;
+ p.mixer?.stopAllAction();
+ const center=parts.get('chest')||parts.get('pelvis')||parts.values().next().value;
+ center.body.applyImpulse(new CANNON.Vec3(impulse.x*12,Math.max(10,impulse.y*12),impulse.z*12),center.body.position);
+ announce('NPC RAGDOLL');
 }
 function hitEffect(){} // Await imported impact effect.
 function combatHit(){if(state.gameOver)return;
@@ -169,7 +197,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-skeletal-hitboxes-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-articulated-ragdolls-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -262,24 +290,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};
    p.role=fieldRoles[i];p.importedClipCount=gltf.animations.length;if(!gltf.animations.length&&!p.fallbackRig)console.warn('No recognized animation armature for',url);
   });
-  if(variant===0&&!playerAvatar){
-   const avatar=clone(gltf.scene);
-   avatar.updateMatrixWorld(true);
-   const bounds=new THREE.Box3().setFromObject(avatar),size=bounds.getSize(new THREE.Vector3());
-   if(size.y>.01){
-    const scale=1.8/size.y;
-    avatar.scale.setScalar(scale);
-    avatar.position.set(-bounds.getCenter(new THREE.Vector3()).x*scale,-bounds.min.y*scale,-bounds.getCenter(new THREE.Vector3()).z*scale);
-    const bodyAnchor=new THREE.Group();bodyAnchor.add(avatar);rig.add(bodyAnchor);
-    bodyAnchor.position.set(0,0,0);
-    // Hide the player's own avatar in flat-screen preview and when the camera is inside it.
-    playerAvatar={anchor:bodyAnchor,model:avatar,mixer:new THREE.AnimationMixer(avatar)};
-    // The player body also requires a real imported animation rig.
-    mixers.push(playerAvatar.mixer);
-    const idle=gltf.animations.find(c=>/idle|stand|breath|walk/i.test(c.name))||gltf.animations[0];
-    if(idle)playerAvatar.mixer.clipAction(idle).play();
-   }
-  }
+
   athletesLoaded++;
   modelStatus.textContent='BUILD '+BUILD_VERSION+' · HUMAN IMPORTS '+athletesLoaded+'/'+athleteURLs.length+' · '+gltf.animations.length+' EMBEDDED CLIPS';
  }).catch(e=>reportError('Athlete skeleton cloning',e));
@@ -412,17 +423,25 @@ const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
   edge('leftY',!!b[5]?.pressed,()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF');announce('AI '+(aiOn?'ON':'OFF'))});
  }
 const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=Math.abs(a[2]||0)>Math.abs(a[0]||0)?a[2]:a[0],sy=Math.abs(a[3]||0)>Math.abs(a[1]||0)?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*3.6)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(false){buttonHeld=true}}}
-if(playerAvatar){playerAvatar.anchor.visible=renderer.xr.isPresenting;playerAvatar.anchor.rotation.y=new THREE.Euler().setFromQuaternion(camera.quaternion,'YXZ').y;}
+// First-person player has no rendered body.
 enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}physics.step(1/60,dt,3);
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
 for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)updateFallbackPose(fallback,dt);
 for(const p of players){
- if(!p.ragdoll||!p.fallBody)continue;
+ if(!p.ragdollParts)continue;
  p.fallTime+=dt;
- const b=p.fallBody;
- p.group.position.set(b.position.x,Math.max(0,b.position.y-1.0),b.position.z);
- p.group.quaternion.set(b.quaternion.x,b.quaternion.y,b.quaternion.z,b.quaternion.w);
+ // Update imported skeleton bones from constrained Cannon physics bodies.
+ for(const {bone,body} of p.ragdollParts.values()){
+  const parent=bone.parent;
+  parent.updateWorldMatrix(true,false);
+  const worldPos=new THREE.Vector3(body.position.x,body.position.y,body.position.z);
+  bone.position.copy(parent.worldToLocal(worldPos));
+  const parentQ=parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+  const worldQ=new THREE.Quaternion(body.quaternion.x,body.quaternion.y,body.quaternion.z,body.quaternion.w);
+  bone.quaternion.copy(parentQ.multiply(worldQ));
+  bone.updateMatrixWorld(true);
+ }
 }
 
 if(renderer.xr.isPresenting){vrBoard.visible=true;updateVRBoard(now)}else vrBoard.visible=false;if(importedStadium.children[0]?.userData.mixer)importedStadium.children[0].userData.mixer.update(dt);renderer.render(scene,camera)});
