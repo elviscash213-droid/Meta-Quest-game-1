@@ -136,6 +136,7 @@ function enemyAI(dt,now){
   const distance=delta.length();
   if(distance>.45){
    const slow=(p.injuries?.leftLeg>=2||p.injuries?.rightLeg>=2)?.3:1;
+   if(mind&&p.fractures&&(p.fractures.leftLeg||p.fractures.rightLeg)){mind.fear=Math.max(mind.fear,.25);if(distance>3&&mind.goal==='attack')mind.goal='circle'}
    const speed=fighting?(distance>7?3.2:1.9):2.3;
    if(p.staggerUntil&&now<p.staggerUntil){playCharacter(p,'hit');continue}
    p.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*speed*slow));
@@ -180,6 +181,8 @@ function wound(p,force,point){
  let limb=relative.y<.9?(relative.x<0?'leftLeg':'rightLeg'):relative.y>1.8?'torso':(relative.x<0?'leftArm':'rightArm');
  if(!keys.includes(limb))limb='torso';
  p.injuries[limb]=Math.min(3,p.injuries[limb]+(force>=7?2:1));
+ p.fractures=p.fractures||{};
+ if(p.injuries[limb]>=2){p.fractures[limb]={severity:p.injuries[limb],time:performance.now(),healed:false};if(limb==='leftLeg'||limb==='rightLeg')p.staggerUntil=Math.max(p.staggerUntil||0,performance.now()+1100)}
  if(p.injuries[limb]>=2){p.health=Math.max(0,p.health-1);p.group.rotation.z+=limb==='leftLeg'?-.12:limb==='rightLeg'?.12:0}
  return limb+' '+(p.injuries[limb]>=2?'FRACTURED':'INJURED');
 }
@@ -247,7 +250,8 @@ function buildRagdoll(p,impulse){
   const a=parent.body.position,b=part.body.position;
   // Anchor at the actual child joint, not the midpoint between limb origins.
   const pivotA=b.vsub(a),pivotB=new CANNON.Vec3(0,0,0);
-  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,120);physics.addConstraint(joint);constraints.push(joint);
+  const damaged=part.id==='unused'?false:(id=>id.includes('_l')?(id.includes('arm')?p.fractures?.leftArm:p.fractures?.leftLeg):id.includes('_r')?(id.includes('arm')?p.fractures?.rightArm:p.fractures?.rightLeg):false)([...parts.entries()].find(([,value])=>value===part)?.[0]||'');
+  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,damaged?35:120);physics.addConstraint(joint);constraints.push(joint);
  }
  p.ragdoll=true;p.ragdollParts=parts;p.ragdollConstraints=constraints;p.fallTime=0;p.actionLockUntil=Infinity;
  p.mixer?.stopAllAction();
@@ -269,7 +273,7 @@ function recoverNPC(p){
  const rest=initialPositions[players.indexOf(p)];
  const pelvis=partsRecoveryPosition||rest;
  p.group.position.set(pelvis.x,0,pelvis.z);
- p.health=8;p.alive=true;if(p.psyche){p.psyche.fear=Math.max(.35,p.psyche.fear);p.psyche.anger*=.5;p.psyche.decisionAt=0;}p.actionLockUntil=0;p.pendingAttackAt=0;p.staggerUntil=0;
+ p.health=Math.max(3,8-Object.keys(p.fractures||{}).length);p.alive=true;if(p.psyche){p.psyche.fear=Math.max(.35,p.psyche.fear);p.psyche.anger*=.5;p.psyche.decisionAt=0;}p.actionLockUntil=0;p.pendingAttackAt=0;p.staggerUntil=0;
  playCharacter(p,'idle');
 }
 // Quest grip physics: each hand can constrain an imported NPC's ragdoll limb.
@@ -349,7 +353,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-imported-blood-physics-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-persistent-fracture-ragdoll-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
