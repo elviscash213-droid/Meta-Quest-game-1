@@ -37,6 +37,7 @@ scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.Di
 // Imported-only visuals: no generated character or environment meshes.
 function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);return {group,health:8,alive:true,psyche:{courage:.25+Math.random()*.7,aggression:.2+Math.random()*.8,loyalty:Math.random(),fear:0,anger:0,trust:0,temperament:Math.random(),decisionAt:0,goal:'idle',memory:{lastHitAt:0,lastThreat:null},idleUntil:0}}}
 // Phase 1: authentic third-party CC0 stadium scene (not generated in this project).
+let baseballScale=1;
 const stadiumColliders=[];
 function blockedByStadium(pos,radius=.34){return stadiumColliders.some(b=>pos.y<b.max.y&&pos.y+1.5>b.min.y&&pos.x>b.min.x-radius&&pos.x<b.max.x+radius&&pos.z>b.min.z-radius&&pos.z<b.max.z+radius)}
 const importedStadium=new THREE.Group();scene.add(importedStadium);
@@ -51,13 +52,21 @@ new GLTFLoader().load(assetUrl,gltf=>{
  importedStadium.add(stadium);
  stadium.updateMatrixWorld(true);
  const bounds=new THREE.Box3().setFromObject(stadium),size=bounds.getSize(new THREE.Vector3());
- // Keep all nine players inside the imported stadium's actual footprint.
- const fieldRadius=Math.max(8,Math.min(size.x,size.z)*.37);
+ // Form a complete defensive nine inside the open playing area, even in a soccer stadium.
+ // A stadium's overall bounding box includes its stands; use a conservative central footprint.
+ const fieldRadius=Math.max(7,Math.min(size.x,size.z)*.22);
  const factor=Math.min(1,fieldRadius/62);
+ const offset=new THREE.Vector3(0,0,0);
  for(let i=0;i<players.length;i++){
-  const [x,z]=playerPositions[i];players[i].group.position.set(x*factor,0,z*factor);initialPositions[i].set(x*factor,0,z*factor);
+  const [x,z]=playerPositions[i];
+  const position=new THREE.Vector3(x*factor+offset.x,0,z*factor+offset.z);
+  players[i].group.position.copy(position);
+  initialPositions[i].copy(position);
+  players[i].group.rotation.y=i===1?0:Math.atan2(-position.x,-position.z);
  }
  rig.position.set(.85*factor,0,.85*factor);
+ // Pitching distance must match the actual scaled formation.
+ baseballScale=factor;
  // Collision proxies use imported stadium meshes; no visible substitute geometry.
  stadium.updateMatrixWorld(true);
  stadiumColliders.length=0;
@@ -402,7 +411,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-modern-stadium-asset-loader-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-modern-stadium-formation-scale-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -530,7 +539,7 @@ function finishGame(){state.gameOver=true;state.flying=false;announce('FINAL · 
 const ballGeo=null,ballMat=null;let importedBall=null;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33765/v1/model.glb',g=>{importedBall=g.scene;loadStatus.textContent+=' · BASEBALL IMPORTED'},undefined,e=>reportError('Baseball import',e));
 function announce(t){if(/HOME RUN|KNOCKDOWN|FRACTURED|CRACK|STRIKE THREE/.test(t))beep(340,.14);document.getElementById('msg').textContent=t;setTimeout(()=>{if(document.getElementById('msg').textContent===t)document.getElementById('msg').textContent=''},1500)}
 function hud(){document.getElementById('score').textContent='INNING '+state.inning+' / 9 · HOME '+state.home+' : AWAY '+state.away;document.getElementById('status').textContent='HR '+state.hr+' · KOs '+state.kos+' · HP '+playerHP+' · OUTS '+state.outs;document.getElementById('mode').textContent='MODE: '+state.mode;count()}
-function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);if(!importedBall){announce('WAITING FOR IMPORTED BASEBALL');return}ball=importedBall.clone(true);ball.position.set(0,1.8,-18);scene.add(ball);velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
+function pitch(){if(state.gameOver)return;if(ball)scene.remove(ball);if(!importedBall){announce('WAITING FOR IMPORTED BASEBALL');return}ball=importedBall.clone(true);ball.position.set(0,1.8,-18*baseballScale);scene.add(ball);velocity.set((Math.random()-.5)*.8,.15,13+Math.random()*4);state.flying=true;state.contact=false;lastPitch=performance.now();announce('PITCH!')}
 function out(){state.outs++;state.flying=false;clearCount();if(state.outs>=3){state.outs=0;state.bases=[false,false,false];state.inning++;announce(state.inning>9?'FINAL SCORE':'NEXT INNING');if(state.inning>9)finishGame()}else announce('OUT '+state.outs);hud()}
 function swing(){if(state.gameOver)return;lastSwing=performance.now();if(state.mode==='BRAWL'){combatHit();return}
 if(!ball||!state.flying){announce('WAIT FOR PITCH');return}
