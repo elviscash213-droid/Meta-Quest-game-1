@@ -67,16 +67,48 @@ const initialPositions=playerPositions.map(([x,z])=>new THREE.Vector3(x,0,z));
 document.getElementById('aiToggle').onclick=()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF')};
 document.getElementById('gameMode').onclick=()=>{ruleMode=ruleMode==='CHAOS'?'BASEBALL':'CHAOS';document.getElementById('gameMode').textContent='RULES: '+ruleMode;if(ruleMode==='BASEBALL'){state.mode='BAT';hud()}announce(ruleMode+' RULES')};
 function enemyAI(dt,now){
- if(!aiOn||ruleMode==='BASEBALL'||state.gameOver||state.mode!=='BRAWL')return;
+ if(!aiOn||state.gameOver)return;
  const target=camera.getWorldPosition(new THREE.Vector3());target.y=0;
+ const fighting=state.mode==='BRAWL'&&ruleMode!=='BASEBALL';
+ let nearest=null,nearestDistance=Infinity;
  for(let i=0;i<players.length;i++){
   const p=players[i];if(!p.alive)continue;
-  const delta=target.clone().sub(p.group.position);const distance=delta.length();
-  if(distance<14&&distance>1.25){delta.normalize();const slow=(p.injuries?.leftLeg>=2||p.injuries?.rightLeg>=2)?.3:1;p.group.position.addScaledVector(delta,dt*.65*slow);p.group.lookAt(target.x,0,target.z);playCharacter(p,'walk')}
-  if(distance<1.7&&now-lastAI>1800){lastAI=now;playerHP=Math.max(0,playerHP-7);enemyHits++;beep(105,.13,'sawtooth');announce('YOU WERE HIT · HEALTH '+playerHP);if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}}
+  const home=initialPositions[i];
+  const destination=home.clone();
+  // During a live hit, the nearest fielder pursues the actual ball.
+  if(!fighting&&state.contact&&state.flying&&ball&&i!==8){
+   const distanceToBall=p.group.position.distanceTo(ball.position);
+   if(distanceToBall<nearestDistance){nearest=p;nearestDistance=distanceToBall}
+  }
+  if(fighting&&i%3!==0){
+   const d=target.distanceTo(p.group.position);
+   if(d<14)destination.copy(target);
+  }
+  const delta=destination.sub(p.group.position);delta.y=0;
+  const distance=delta.length();
+  if(distance>.45){
+   const slow=(p.injuries?.leftLeg>=2||p.injuries?.rightLeg>=2)?.3:1;
+   const speed=fighting?1.6:2.3;
+   p.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*speed*slow));
+   p.group.lookAt(p.group.position.x+delta.x,0,p.group.position.z+delta.z);
+   playCharacter(p,distance>4?'run':'walk');
+  }else playCharacter(p,'idle');
+  if(fighting&&p.group.position.distanceTo(target)<1.7&&now-(p.lastAttack||0)>2100){
+   p.lastAttack=now;playerHP=Math.max(0,playerHP-7);enemyHits++;
+   beep(105,.13,'sawtooth');announce('NPC PUNCH · HEALTH '+playerHP);
+   if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
+  }
+ }
+ if(nearest&&ball&&state.contact&&state.flying){
+  const destination=ball.position.clone();destination.y=0;
+  const delta=destination.sub(nearest.group.position),distance=delta.length();
+  if(distance>.45){nearest.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*4.2));nearest.group.lookAt(destination.x,0,destination.z);playCharacter(nearest,'run')}
+  if(distance<1.15&&ball.position.y<2.5){
+   state.flying=false;scene.remove(ball);ball=null;
+   advance(1);announce('FIELDER RECOVERS BALL · SINGLE');
+  }
  }
 }
-
 const physics=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
 physics.defaultContactMaterial.friction=.7;
 const groundBody=new CANNON.Body({mass:0,shape:new CANNON.Plane()});groundBody.quaternion.setFromEuler(-Math.PI/2,0,0);physics.addBody(groundBody);
@@ -239,7 +271,7 @@ const session=renderer.xr.getSession();if(session){
  }
 const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=Math.abs(a[2]||0)>Math.abs(a[0]||0)?a[2]:a[0],sy=Math.abs(a[3]||0)>Math.abs(a[1]||0)?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*3.6)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(false){buttonHeld=true}}}
 if(playerAvatar){playerAvatar.anchor.visible=renderer.xr.isPresenting;playerAvatar.anchor.rotation.y=new THREE.Euler().setFromQuaternion(camera.quaternion,'YXZ').y;}
-enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&state.mode!=='BRAWL')playCharacter(p,'idle')}}physics.step(1/60,dt,3);
+enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}physics.step(1/60,dt,3);
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
 for(const mixer of mixers)mixer.update(dt);
