@@ -197,7 +197,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-physical-grip-release-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-imported-xr-hands-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -337,6 +337,16 @@ document.getElementById('weaponSwitch').onclick=switchWeapon;
 function toggle(){state.mode=state.mode==='BAT'?'BRAWL':'BAT';hud();announce(state.mode==='BRAWL'?'BRAWL · NPCS APPROACHING':'BASEBALL MODE')}
 document.getElementById('pitch').onclick=pitch;document.getElementById('take').onclick=takePitch;document.getElementById('swing').onclick=swing;document.getElementById('mode').onclick=toggle;document.getElementById('reset').onclick=()=>location.reload();
 const controller0=renderer.xr.getController(0),controller1=renderer.xr.getController(1);rig.add(controller0,controller1);
+ // Imported WebXR hand meshes, not procedural geometry. Hand tracking drives all finger joints.
+ import('three/addons/webxr/XRHandModelFactory.js').then(({XRHandModelFactory})=>{
+  const factory=new XRHandModelFactory();
+  for(let i=0;i<2;i++){
+   const hand=renderer.xr.getHand(i);
+   const mesh=factory.createHandModel(hand,'mesh');
+   hand.add(mesh);rig.add(hand);
+  }
+ }).catch(e=>reportError('Imported WebXR hand models',e));
+
 // Quest controls: left trigger pitches; right trigger attacks only in fist mode.
 controller0.addEventListener('selectstart',pitch);
 controller1.addEventListener('selectstart',()=>{if(state.mode!=='BRAWL'){state.mode='BRAWL';hud();announce('FIGHT MODE · SWING OR TRIGGER TO STRIKE')}combatHit()});
