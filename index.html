@@ -155,7 +155,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-nine-human-66clips-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-no-robot-strict-rig-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -221,6 +221,10 @@ Promise.all(Object.entries(motionFiles).map(async([name,file])=>{
 });
 let athletesLoaded=0;
 athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
+ // Never show unanimated or unrigged stand-ins. Reject them at the asset boundary.
+ let skinned=0;gltf.scene.traverse(o=>{if(o.isSkinnedMesh)skinned++});
+ const clips=gltf.animations.filter(c=>!/tpose|t-pose|bindpose/i.test(c.name));
+ if(!skinned||!clips.length){reportError('Rejected non-animated or unrigged human',url);return}
  import('three/addons/utils/SkeletonUtils.js').then(({clone})=>{
   players.forEach((p,i)=>{
    if(i%athleteURLs.length!==variant)return;
@@ -237,11 +241,11 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    model.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.castShadow=true}});
    // Attach motion clips only after the character mixer has been created.
    p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
-   if(!gltf.animations.length)p.fallbackRig=setupFallbackPose(model);
+   // No manual T-pose fallback: this roster requires authentic embedded clips.
    p.actions={};for(const clip of gltf.animations.filter(c=>!/tpose|t-pose|bindpose/i.test(c.name))){const action=p.mixer.clipAction(clip);p.actions[clip.name]=action;p.actions[clip.name.toLowerCase()]=action;}
    const idle=gltf.animations.find(c=>/^(idle|stand|breath)$/i.test(c.name))||gltf.animations.find(c=>/idle|stand|breath/i.test(c.name))||gltf.animations.find(c=>!/tpose|t-pose|bindpose/i.test(c.name));
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
-   p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};if(!gltf.animations.length)attachSharedMotions(p);
+   p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};
    p.role=fieldRoles[i];p.importedClipCount=gltf.animations.length;if(!gltf.animations.length&&!p.fallbackRig)console.warn('No recognized animation armature for',url);
   });
   if(variant===0&&!playerAvatar){
@@ -256,14 +260,14 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
     bodyAnchor.position.set(0,0,0);
     // Hide the player's own avatar in flat-screen preview and when the camera is inside it.
     playerAvatar={anchor:bodyAnchor,model:avatar,mixer:new THREE.AnimationMixer(avatar)};
-    if(!gltf.animations.length)playerAvatar.fallbackRig=setupFallbackPose(avatar);
+    // The player body also requires a real imported animation rig.
     mixers.push(playerAvatar.mixer);
     const idle=gltf.animations.find(c=>/idle|stand|breath|walk/i.test(c.name))||gltf.animations[0];
-    if(idle)playerAvatar.mixer.clipAction(idle).play();if(!gltf.animations.length)attachSharedMotions(playerAvatar);
+    if(idle)playerAvatar.mixer.clipAction(idle).play();
    }
   }
   athletesLoaded++;
-  modelStatus.textContent='BUILD '+BUILD_VERSION+' · ATHLETES '+athletesLoaded+'/'+athleteURLs.length+' · MOTIONS '+(Object.keys(sharedMotions).join(', ')||'LOADING');
+  modelStatus.textContent='BUILD '+BUILD_VERSION+' · HUMAN IMPORTS '+athletesLoaded+'/'+athleteURLs.length+' · '+gltf.animations.length+' EMBEDDED CLIPS';
  }).catch(e=>reportError('Athlete skeleton cloning',e));
 },undefined,e=>{modelStatus.textContent='ATHLETE IMPORT FAILED · '+url;reportError('Athlete import',e)}));
 function playCharacter(p,name){
