@@ -45,13 +45,13 @@ new GLTFLoader().load(assetUrl,gltf=>{
  // Imported scene only. Never generate a substitute field.
  const box=new THREE.Box3().setFromObject(stadium);
  const center=box.getCenter(new THREE.Vector3());
- stadium.position.set(-center.x,-box.min.y,-center.z-20);
+ stadium.position.set(-center.x,-box.min.y,-center.z);
  importedStadium.add(stadium);
  
  loadStatus.textContent='IMPORTED STADIUM LOADED · NO GENERATED ASSETS';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
 },undefined,e=>{loadStatus.textContent='ERROR: IMPORTED STADIUM FAILED — NO FALLBACK';reportError('Stadium GLB '+assetUrl,e)});
-const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,8);
+const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(0,0,0);
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Group();vrBoard.position.set(0,-.32,-1.7);camera.add(vrBoard);
 let lastVRMessage='READY',lastVRUpdate=0;
@@ -215,7 +215,7 @@ const session=renderer.xr.getSession();if(session){
   edge('leftX',!!b[4]?.pressed,()=>{document.getElementById('gameMode').click()});
   edge('leftY',!!b[5]?.pressed,()=>{aiOn=!aiOn;document.getElementById('aiToggle').textContent='AI: '+(aiOn?'ON':'OFF');announce('AI '+(aiOn?'ON':'OFF'))});
  }
-const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=a.length>=4?a[2]:a[0],sy=a.length>=4?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*2.4)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(false){buttonHeld=true}}}
+const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=Math.abs(a[2]||0)>Math.abs(a[0]||0)?a[2]:a[0],sy=Math.abs(a[3]||0)>Math.abs(a[1]||0)?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*3.6)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(false){buttonHeld=true}}}
 enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){p.group.rotation.y=Math.sin(now*.0007+i)*.13;if(p.mixer&&now-lastSwing>700)playCharacter(p,'idle')}}physics.step(1/60,dt,3);
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
