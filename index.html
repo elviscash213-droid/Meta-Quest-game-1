@@ -59,6 +59,7 @@ new GLTFLoader().load(assetUrl,gltf=>{
  stadium.position.copy(homePosition.applyAxisAngle(up, yaw).negate());
  importedStadium.add(stadium);
  stadium.updateMatrixWorld(true);
+ addMetalBat(stadium);
  for (let i = 0; i < players.length; i++) {
   players[i].group.position.copy(initialPositions[i]);
  }
@@ -124,7 +125,7 @@ function enemyAI(dt,now){
   if(mind&&mind.goal==='flee'&&mind.lastThreatAt&&now-mind.lastThreatAt>11000)mind.goal='circle';
   if(mind){mind.fear=Math.max(0,mind.fear-dt*.025);mind.anger=Math.max(0,mind.anger-dt*.012);mind.grudge=Math.max(0,mind.grudge-dt*.001)}
   // During a live hit, the nearest fielder pursues the actual ball.
-  if(!fighting&&state.contact&&state.flying&&ball&&i>1){
+  if(!fighting&&state.contact&&state.flying&&ball&&i>1&&isFairBall(ball.position)){
    const distanceToBall=p.group.position.distanceTo(ball.position);
    if(distanceToBall<nearestDistance){nearest=p;nearestDistance=distanceToBall}
   }
@@ -153,6 +154,7 @@ function enemyAI(dt,now){
     if(mind?.goal!=='flee'&&d>2.1)destination.addScaledVector(away.normalize(),1.55+(i%3)*.35);
    }
   }
+  if(!fighting&&state.contact&&state.flying&&ball)continue;
   const delta=destination.sub(p.group.position);delta.y=0;
   const distance=delta.length();
   if(distance>.45){
@@ -185,13 +187,25 @@ function enemyAI(dt,now){
  if(nearest&&ball&&state.contact&&state.flying){
   const destination=ball.position.clone();destination.y=0;
   const delta=destination.sub(nearest.group.position),distance=delta.length();
-  if(distance>.45){nearest.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*4.2));const heading=Math.atan2(delta.x,delta.z);nearest.group.rotation.y+=Math.atan2(Math.sin(heading-nearest.group.rotation.y),Math.cos(heading-nearest.group.rotation.y))*Math.min(1,dt*8);playCharacter(nearest,'run')}
-  if(distance<1.15&&ball.position.y<2.5){
-   state.flying=false;scene.remove(ball);ball=null;
-   advance(1);announce('FIELDER RECOVERS BALL · SINGLE');
+  if(distance>.45){
+   const step=delta.normalize().multiplyScalar(Math.min(distance,dt*4.2));
+   const next=nearest.group.position.clone().add(step);
+   if(!blockedByStadium(next))nearest.group.position.copy(next);
+   const heading=Math.atan2(step.x,step.z);
+   nearest.group.rotation.y+=Math.atan2(Math.sin(heading-nearest.group.rotation.y),Math.cos(heading-nearest.group.rotation.y))*Math.min(1,dt*8);
+   playCharacter(nearest,'run');
+  }
+  const hand=nearest.model?.getObjectByName('hand_r');
+  const reach=hand?.getWorldPosition(new THREE.Vector3());
+  if(reach&&reach.distanceTo(ball.position)<.57&&ball.position.y>.45&&velocity.y<0){
+   scene.remove(ball);ball=null;
+   playCharacter(nearest,'field');
+   out();
+   announce('FLY OUT · '+nearest.role);
   }
  }
 }
+
 const physics=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
 physics.solver.iterations=18;physics.solver.tolerance=.0008;
 physics.defaultContactMaterial.friction=.7;
@@ -406,7 +420,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='quest-controls-diamond-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='quest-fielding-metal-bat-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -508,16 +522,16 @@ function playCharacter(p,name){
  if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';
  if((name==='idle'||name==='walk'||name==='run')&&p.actionLockUntil&&performance.now()<p.actionLockUntil)return;
  if(!p.mixer||!p.actions)return;
- const aliases={throw:/^(baseball_pitch|pitch|grenade_throw)$/i,idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|fire|shoot)/i,hit:/^(hit|hurt|react|stagger|impact)/i,death:/^(death|die|dead|fall|defeat)/i};
+ const aliases={field:/^(baseball_catch|catch|block)$/i,throw:/^(baseball_pitch|pitch|grenade_throw)$/i,idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|kick|fire|shoot)/i,hit:/^(hit|hurt|react|stagger|impact)/i,death:/^(death|die|dead|fall|defeat)/i};
  const requested=p.clips?.[name]||name;
  const direct=p.actions[requested]||p.actions[requested.toLowerCase()];
  const key=Object.keys(p.actions).find(k=>aliases[name]?.test(k));
  const next=direct||p.actions[key];
  if(!next)return;
- if(name==='attack'||name==='hit'||name==='throw')p.actionLockUntil=performance.now()+Math.max(350,Math.min(1200,next.getClip().duration*1000));
+ if(name==='attack'||name==='hit'||name==='throw'||name==='field')p.actionLockUntil=performance.now()+Math.max(350,Math.min(1800,next.getClip().duration*1000));
  if(name==='death')p.actionLockUntil=Infinity;
  if(!next||next===p.currentAction)return;
- if(name==='throw'){next.setLoop(THREE.LoopOnce,1);next.clampWhenFinished=true}
+ if(name==='throw'||name==='field'){next.setLoop(THREE.LoopOnce,1);next.clampWhenFinished=true}
  next.enabled=true;next.reset().fadeIn(.2).play();
  p.currentAction?.fadeOut(.2);p.currentAction=next;
 }
@@ -535,6 +549,14 @@ function finishGame(){state.gameOver=true;state.flying=false;announce('FINAL · 
 const ballGeo=null,ballMat=null;let importedBall=null;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33765/v1/model.glb',g=>{importedBall=g.scene;loadStatus.textContent+=' · BASEBALL IMPORTED'},undefined,e=>reportError('Baseball import',e));
 function announce(t){if(/HOME RUN|KNOCKDOWN|FRACTURED|CRACK|STRIKE THREE/.test(t))beep(340,.14);document.getElementById('msg').textContent=t;setTimeout(()=>{if(document.getElementById('msg').textContent===t)document.getElementById('msg').textContent=''},1500)}
 function hud(){document.getElementById('score').textContent='INNING '+state.inning+' / 9 · HOME '+state.home+' : AWAY '+state.away;document.getElementById('status').textContent='HR '+state.hr+' · KOs '+state.kos+' · HP '+playerHP+' · OUTS '+state.outs;document.getElementById('mode').textContent='MODE: '+state.mode;count()}
+function isFairBall(position){
+ return position.z<0&&Math.abs(position.x)<=-position.z+.15;
+}
+function foulBall(){
+ if(state.strikes<2)state.strikes++;
+ hud();
+ announce('FOUL BALL');
+}
 let pitchRelease=0;
 function pitch(){
  if(state.gameOver||state.mode!=='BAT'||state.flying||pitchRelease)return;
@@ -636,6 +658,33 @@ new GLTFLoader().load(knifeAsset,g=>{knifeObject=g.scene;const bounds=new THREE.
 function pickupKnife(){if(!knifeReady||knifeHeld||!knifeObject||batHeld)return false;const pos=controller1.getWorldPosition(new THREE.Vector3());if(knifeObject.getWorldPosition(new THREE.Vector3()).distanceTo(pos)>.65)return false;if(knifeBody){physics.removeBody(knifeBody);knifeBody=null}scene.attach(knifeObject);controller1.attach(knifeObject);knifeObject.position.set(0,-.055,-.16);knifeObject.rotation.set(-Math.PI/2,0,0);knifeHeld=true;weaponKind='KNIFE';state.mode='BRAWL';document.getElementById('weaponSwitch').textContent='WEAPON: KNIFE';announce('KNIFE GRIPPED');return true}
 function dropKnife(){if(!knifeHeld||!knifeObject)return;knifeObject.updateMatrixWorld(true);scene.attach(knifeObject);knifeHeld=false;const p=knifeObject.position;knifeBody=new CANNON.Body({mass:.35,shape:new CANNON.Box(new CANNON.Vec3(.035,.025,.14)),linearDamping:.16,angularDamping:.2});knifeBody.position.set(p.x,p.y,p.z);const v=controller1.userData.releaseVelocity||new THREE.Vector3();knifeBody.velocity.set(v.x,v.y,v.z);physics.addBody(knifeBody);announce('KNIFE DROPPED')}
 
+function addMetalBat(stadium){
+ const source=stadium.getObjectByName('128-baseball-bat-metal');
+ if(!source)return;
+ const bat=new THREE.Group();
+ const geometry=source.clone(true);
+ geometry.position.set(0,0,0);
+ geometry.quaternion.identity();
+ geometry.updateMatrixWorld(true);
+ const bounds=new THREE.Box3().setFromObject(geometry);
+ const size=bounds.getSize(new THREE.Vector3());
+ const center=bounds.getCenter(new THREE.Vector3());
+ geometry.position.sub(center);
+ const aligned=new THREE.Group();
+ aligned.add(geometry);
+ // The held bat points along the controller's local negative Z after its grip rotation.
+ if(size.x>size.y&&size.x>size.z)aligned.rotation.z=Math.PI/2;
+ else if(size.z>size.y)aligned.rotation.x=Math.PI/2;
+ const length=Math.max(size.x,size.y,size.z);
+ if(length<=0)return;
+ aligned.scale.setScalar(.82/length);
+ bat.add(aligned);
+ bat.userData.batName='METAL BAT';
+ bat.position.set(2.15,.9,.45);
+ bat.rotation.z=Math.PI/2;
+ scene.add(bat);
+ droppedWeapons.push({mesh:bat,body:null});
+}
 function releaseHeldBat(){
  if(!batHeld)return;
  batHeld=false;prevBatTip=null;previousMeleeTip=null;
@@ -644,7 +693,7 @@ function releaseHeldBat(){
  const bat=weapon.children[0];if(!bat)return;
  const pos=bat.getWorldPosition(new THREE.Vector3()),rot=bat.getWorldQuaternion(new THREE.Quaternion());
  weapon.remove(bat);scene.add(bat);bat.position.copy(pos);bat.quaternion.copy(rot);
- const body=new CANNON.Body({mass:1.1,shape:new CANNON.Box(new CANNON.Vec3(.07,.07,.43)),linearDamping:.12,angularDamping:.18});
+ const body=new CANNON.Body({mass:1.1,shape:new CANNON.Box(new CANNON.Vec3(.07,.43,.07)),linearDamping:.12,angularDamping:.18});
  body.position.set(pos.x,pos.y,pos.z);body.quaternion.set(rot.x,rot.y,rot.z,rot.w);
  const vel=controller1.userData.releaseVelocity||new THREE.Vector3();
  const spin=controller1.userData.releaseAngularVelocity||new THREE.Vector3();body.angularVelocity.set(spin.x,spin.y,spin.z);
@@ -652,19 +701,31 @@ function releaseHeldBat(){
  physics.addBody(body);droppedWeapons.push({mesh:bat,body});
  importedBatReady=false;announce('BAT RELEASED · PICK UP WITH GRIP');
 }
+function parkReserveBat(spare=weapon.children[0]){
+ spare.removeFromParent();
+ spare.position.set(-1.6,.9,.45);
+ spare.rotation.set(0,0,Math.PI/2);
+ scene.add(spare);
+ droppedWeapons.push({mesh:spare,body:null});
+}
 function grabNearbyBat(){
  if(batHeld||weaponKind!=='BAT')return;
  const hand=controller1.getWorldPosition(new THREE.Vector3());
  let nearest=null,dist=1.05;
  for(const item of droppedWeapons){const d=item.mesh.position.distanceTo(hand);if(d<dist){nearest=item;dist=d}}
  if(nearest){
+  if(weapon.children.length)parkReserveBat();
   const i=droppedWeapons.indexOf(nearest);droppedWeapons.splice(i,1);
-  physics.removeBody(nearest.body);scene.remove(nearest.mesh);
-  weapon.add(nearest.mesh);nearest.mesh.position.set(0,0,-.4);nearest.mesh.rotation.set(-Math.PI/2,0,0);nearest.mesh.scale.setScalar(1);
+  if(nearest.body)physics.removeBody(nearest.body);
+  scene.remove(nearest.mesh);
+  weapon.add(nearest.mesh);nearest.mesh.position.set(0,0,-.4);nearest.mesh.rotation.set(-Math.PI/2,0,0);
   importedBatReady=true;
  }else if(!importedBatReady){announce('MOVE HAND CLOSER TO BAT');return}
- batHeld=true;announce('BAT GRIPPED');
-}let importedBatReady=false;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33763/v1/model.glb',g=>{const bat=g.scene;bat.rotation.x=-Math.PI/2;bat.position.set(0,0,-.4);weapon.add(bat);importedBatReady=true;loadStatus.textContent+=' · BAT IMPORTED'},undefined,e=>reportError('Bat import',e));
+ batHeld=true;
+ const name=weapon.children[0]?.userData.batName||'BAT';
+ document.getElementById('weaponSwitch').textContent='WEAPON: '+name;
+ announce(name+' GRIPPED');
+}let importedBatReady=false;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33763/v1/model.glb',g=>{const bat=g.scene;bat.rotation.x=-Math.PI/2;bat.position.set(0,0,-.4);if(weapon.children.length)parkReserveBat(bat);else {weapon.add(bat);importedBatReady=true}loadStatus.textContent+=' · BAT IMPORTED'},undefined,e=>reportError('Bat import',e));
 renderer.xr.addEventListener('sessionstart',()=>{document.body.classList.add('in-vr');modelStatus.textContent='VR session started';loadStatus.style.display='none';modelStatus.style.display='none'});
 renderer.xr.addEventListener('sessionend',()=>{document.body.classList.remove('in-vr');loadStatus.style.display='block';modelStatus.style.display='block'});const clock=new THREE.Clock();let prev=performance.now();const questButtons={};let batHeld=false,prevBatTip=null,lastPhysicalSwing=0;
 const batNear=new THREE.Vector3(),batFar=new THREE.Vector3(),batMotion=new THREE.Vector3(),batClosest=new THREE.Vector3();
@@ -801,7 +862,14 @@ function updateLocomotion(left,right,dt){
 renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min((now-prev)/1000,.04);prev=now;updateControllerHands(dt);
 if(pitchRelease&&now>=pitchRelease)releasePitch();
 if(state.flying&&ball){ball.position.addScaledVector(velocity,dt);velocity.y-=9.81*dt;if(ball.position.z>=.65&&velocity.z>0&&!state.contact){takePitch()}
-else if(ball.position.y<.12){if(state.contact&&velocity.z<0&&ball.position.z<-75){state.hr++;advance(4)}else if(state.contact&&velocity.z<0){const distance=-ball.position.z;advance(distance>55?3:distance>32?2:1)}else if(!state.contact){takePitch()}else out();state.flying=false;if(ball){scene.remove(ball);ball=null}}}
+else if(ball.position.y<.12){
+ if(!state.contact)takePitch();
+ else if(!isFairBall(ball.position))foulBall();
+ else if(ball.position.z<-43){state.hr++;advance(4)}
+ else {const distance=-ball.position.z;advance(distance>36?3:distance>24?2:1)}
+ state.flying=false;
+ if(ball){scene.remove(ball);ball=null}
+}}
 const session=renderer.xr.getSession();if(session){if(controller1.parent)trackedMelee(now,dt);
  const rightVelocity=controller1.getWorldPosition(new THREE.Vector3());const prevVelocity=controller1.userData.prevPosition;
  controller1.userData.releaseVelocity=prevVelocity?rightVelocity.clone().sub(prevVelocity).divideScalar(Math.max(dt,.008)).clampLength(0,14):new THREE.Vector3();controller1.userData.prevPosition=rightVelocity;
@@ -841,7 +909,7 @@ const session=renderer.xr.getSession();if(session){if(controller1.parent)tracked
 enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}controller0.userData.gripDt=dt;controller1.userData.gripDt=dt;
 updateNPCGrips();physics.step(1/90,dt,5);
 if(knifeBody&&knifeObject){knifeObject.position.set(knifeBody.position.x,knifeBody.position.y,knifeBody.position.z);knifeObject.quaternion.set(knifeBody.quaternion.x,knifeBody.quaternion.y,knifeBody.quaternion.z,knifeBody.quaternion.w)}
-for(const item of droppedWeapons){item.mesh.position.set(item.body.position.x,item.body.position.y,item.body.position.z);item.mesh.quaternion.set(item.body.quaternion.x,item.body.quaternion.y,item.body.quaternion.z,item.body.quaternion.w)}
+for(const item of droppedWeapons){if(!item.body)continue;item.mesh.position.set(item.body.position.x,item.body.position.y,item.body.position.z);item.mesh.quaternion.set(item.body.quaternion.x,item.body.quaternion.y,item.body.quaternion.z,item.body.quaternion.w)}
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);if(e.obj.geometry&&!e.obj.isSprite)e.obj.geometry.dispose();e.obj.material?.dispose();effects.splice(i,1)}}
 for(const mixer of mixers)mixer.update(dt);updateNeckReactions(now);for(const fallback of fallbackRigs)updateFallbackPose(fallback,dt);
