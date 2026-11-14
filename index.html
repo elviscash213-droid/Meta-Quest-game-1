@@ -241,7 +241,11 @@ function buildRagdoll(p,impulse){
   const bone=bones.find(b=>re.test(b.name));if(!bone)continue;
   const world=bone.getWorldPosition(new THREE.Vector3());
   const quat=bone.getWorldQuaternion(new THREE.Quaternion());
-  const body=new CANNON.Body({mass,shape:new CANNON.Sphere(radius),linearDamping:.18,angularDamping:.46,collisionFilterGroup:2,collisionFilterMask:1});
+  // Colliders follow the imported skeletal limb proportions, rather than using spheres for every part.
+  const elongated=/^(upperarm|lowerarm|thigh|calf)/.test(id);
+  const segmentLength=id.startsWith('thigh')?.39:id.startsWith('calf')?.37:id.startsWith('upperarm')?.27:id.startsWith('lowerarm')?.25:0;
+  const shape=elongated?new CANNON.Cylinder(radius,radius,segmentLength,8):id==='chest'||id==='pelvis'?new CANNON.Box(new CANNON.Vec3(id==='chest'?.22:.19,id==='chest'?.19:.13,.13)):new CANNON.Sphere(radius);
+  const body=new CANNON.Body({mass,shape,linearDamping:.18,angularDamping:.46,collisionFilterGroup:2,collisionFilterMask:1});
   body.position.set(world.x,world.y,world.z);body.quaternion.set(quat.x,quat.y,quat.z,quat.w);
   physics.addBody(body);parts.set(id,{bone,body,parentId,restPosition:bone.position.clone(),restQuaternion:bone.quaternion.clone()});
  }
@@ -359,7 +363,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-ragdoll-anatomical-joint-limits-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-ragdoll-limb-colliders-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -708,7 +712,7 @@ const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
 const inputs=session.inputSources;for(const src of inputs){if(src.gamepad&&src.handedness==='left'){const a=src.gamepad.axes;const sx=Math.abs(a[2]||0)>Math.abs(a[0]||0)?a[2]:a[0],sy=Math.abs(a[3]||0)>Math.abs(a[1]||0)?a[3]:a[1];if(Math.abs(sx)>.18||Math.abs(sy)>.18){const yaw=new THREE.Euler().setFromQuaternion(camera.getWorldQuaternion(new THREE.Quaternion()),'YXZ').y;const move=new THREE.Vector3(sx||0,0,sy||0).applyAxisAngle(new THREE.Vector3(0,1,0),yaw);rig.position.addScaledVector(move,dt*3.6)}}}for(const src of session.inputSources){const gp=src.gamepad;if(!gp)continue;if(false){buttonHeld=true}}}
 // First-person player has no rendered body.
 enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive){if(p.mixer&&now-lastSwing>700&&!aiOn)playCharacter(p,'idle')}}controller0.userData.gripDt=dt;controller1.userData.gripDt=dt;
-updateNPCGrips();physics.step(1/60,dt,3);
+updateNPCGrips();physics.step(1/90,dt,5);
 if(knifeBody&&knifeObject){knifeObject.position.set(knifeBody.position.x,knifeBody.position.y,knifeBody.position.z);knifeObject.quaternion.set(knifeBody.quaternion.x,knifeBody.quaternion.y,knifeBody.quaternion.z,knifeBody.quaternion.w)}
 for(const item of droppedWeapons){item.mesh.position.set(item.body.position.x,item.body.position.y,item.body.position.z);item.mesh.quaternion.set(item.body.quaternion.x,item.body.quaternion.y,item.body.quaternion.z,item.body.quaternion.w)}
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
