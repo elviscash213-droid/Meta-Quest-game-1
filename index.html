@@ -176,7 +176,7 @@ function updateFallbackPose(rig,dt){
  pose(rig.limbs.rightLeg,-swing,0);
 }
 // Licensed third-party MIT skeleton-only animation imports for the same Biped rig.
-const motionFiles={idle:'m_idle_neutral_01.glb',walk:'m_walk_neutral_01.glb',run:'m_run_neutral_01.glb'};
+const motionFiles={idle:'m_idle_neutral_01.glb',walk:'m_walk_neutral_01.glb',run:'m_run_neutral_01.glb',cheer:'m_cheer_01.glb',look:'m_look_around_01.glb'};
 const sharedMotions={};
 function attachSharedMotions(p){if(!p?.model||!p.mixer||!Object.keys(sharedMotions).length)return;if(p.fallbackRig){const i=fallbackRigs.indexOf(p.fallbackRig);if(i>=0)fallbackRigs.splice(i,1);p.fallbackRig=null}p.actions=p.actions||{};p.clips=p.clips||{};for(const [name,clip] of Object.entries(sharedMotions)){const action=p.mixer.clipAction(clip);p.actions[name]=action;p.clips[name]=name}if(p.actions.idle){p.currentAction?.stop();p.currentAction=p.actions.idle;p.currentAction.reset().play()}}
 Promise.all(Object.entries(motionFiles).map(async([name,file])=>{
