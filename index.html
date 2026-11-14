@@ -127,7 +127,7 @@ function wound(p,force,point){
 }
 function bloodBurst(){} // Await imported effect assets.
 function bloodStain(){} // Await imported decals.
-function buildRagdoll(p,impulse){if(p.ragdoll)return;p.ragdoll=true;p.group.visible=false;announce('RAGDOLL MODEL NOT IMPORTED')}
+function buildRagdoll(p,impulse){if(p.ragdoll)return;p.ragdoll=true;p.fallVelocity=impulse.clone().multiplyScalar(.13);p.fallAngular=(Math.random()>.5?1:-1)*2.8;p.fallTime=0;p.group.visible=true;playCharacter(p,'idle');announce('PLAYER DOWN')}
 function hitEffect(){} // Await imported impact effect.
 function combatHit(){if(state.gameOver)return;
  const now=performance.now();if(now-lastCombat<280)return;lastCombat=now;
@@ -167,11 +167,11 @@ function setupFallbackPose(model){
 }
 function updateFallbackPose(rig,dt){
  rig.phase+=dt*(rig.moving?7:1.6);
- const swing=rig.moving?Math.sin(rig.phase)*.48:Math.sin(rig.phase)*.015;
+ const swing=rig.fallen?0:rig.moving?Math.sin(rig.phase)*.48:Math.sin(rig.phase)*.015;
  const pose=(entry,x,z)=>{if(!entry)return;entry.bone.quaternion.copy(entry.base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x,0,z)))};
  // Shoulder adduction removes the imported T-pose; legs alternate when moving.
- pose(rig.limbs.leftArm,-.12+swing*.65,-.95);
- pose(rig.limbs.rightArm,-.12-swing*.65,.95);
+ pose(rig.limbs.leftArm,(rig.fallen?-.55:-.12)+swing*.65,rig.fallen?-.35:-.95);
+ pose(rig.limbs.rightArm,(rig.fallen?-.55:-.12)-swing*.65,rig.fallen?.35:.95);
  pose(rig.limbs.leftLeg,swing,0);
  pose(rig.limbs.rightLeg,-swing,0);
 }
@@ -304,6 +304,9 @@ enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive)
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
 for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
 for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)updateFallbackPose(fallback,dt);
+for(const p of players){if(!p.ragdoll)continue;p.fallTime+=dt;p.fallVelocity.y-=9.81*dt;p.group.position.addScaledVector(p.fallVelocity,dt);if(p.group.position.y<0){p.group.position.y=0;p.fallVelocity.y=Math.max(0,-p.fallVelocity.y*.18);p.fallVelocity.x*=.93;p.fallVelocity.z*=.93}p.group.rotation.z=Math.max(-Math.PI/2,Math.min(Math.PI/2,p.group.rotation.z+p.fallAngular*dt));if(Math.abs(p.group.rotation.z)>=Math.PI/2)p.fallAngular=0;
+if(p.fallbackRig){p.fallbackRig.moving=false;p.fallbackRig.fallen=true;}}
+
 if(renderer.xr.isPresenting){vrBoard.visible=true;updateVRBoard(now)}else vrBoard.visible=false;if(importedStadium.children[0]?.userData.mixer)importedStadium.children[0].userData.mixer.update(dt);renderer.render(scene,camera)});
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});hud();
 </script></body></html>
