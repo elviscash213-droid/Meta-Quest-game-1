@@ -178,7 +178,21 @@ function updateFallbackPose(rig,dt){
 // Licensed third-party MIT skeleton-only animation imports for the same Biped rig.
 const motionFiles={idle:'m_idle_neutral_01.glb',walk:'m_walk_neutral_01.glb',run:'m_run_neutral_01.glb',cheer:'m_cheer_01.glb',look:'m_look_around_01.glb'};
 const sharedMotions={};
-function attachSharedMotions(p){if(!p?.model||!p.mixer||!Object.keys(sharedMotions).length)return;if(p.fallbackRig){const i=fallbackRigs.indexOf(p.fallbackRig);if(i>=0)fallbackRigs.splice(i,1);p.fallbackRig=null}p.actions=p.actions||{};p.clips=p.clips||{};for(const [name,clip] of Object.entries(sharedMotions)){const action=p.mixer.clipAction(clip);p.actions[name]=action;p.clips[name]=name}if(p.actions.idle){p.currentAction?.stop();p.currentAction=p.actions.idle;p.currentAction.reset().play()}}
+function attachSharedMotions(p){
+ if(!p?.model||!p.mixer||!Object.keys(sharedMotions).length)return;
+ const boneNames=new Set();p.model.traverse(o=>{if(o.isBone)boneNames.add(o.name)});
+ p.actions=p.actions||{};p.clips=p.clips||{};
+ let attached=0;
+ for(const [name,clip] of Object.entries(sharedMotions)){
+  const matching=clip.tracks.filter(t=>boneNames.has(t.name.split('.')[0]));
+  if(!matching.length)continue;
+  const compatible=clip.clone();compatible.tracks=matching;
+  p.actions[name]=p.mixer.clipAction(compatible);p.clips[name]=name;attached++;
+ }
+ if(!attached){console.warn('Imported animation skeleton mismatch',Array.from(boneNames).slice(0,12));return}
+ if(p.fallbackRig){const i=fallbackRigs.indexOf(p.fallbackRig);if(i>=0)fallbackRigs.splice(i,1);p.fallbackRig=null}
+ if(p.actions.idle){p.currentAction?.stop();p.currentAction=p.actions.idle;p.currentAction.reset().play()}
+}
 Promise.all(Object.entries(motionFiles).map(async([name,file])=>{
  try{
   const motion=await athleteLoader.loadAsync('https://models.codelove.in/animations/'+file);
@@ -206,7 +220,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    p.group.add(model);p.model=model;
    // Attach motion clips only after the character mixer has been created.
    p.mixer=new THREE.AnimationMixer(model);mixers.push(p.mixer);
-   if(!gltf.animations.length&&!Object.keys(sharedMotions).length)p.fallbackRig=setupFallbackPose(model);
+   if(!gltf.animations.length)p.fallbackRig=setupFallbackPose(model);
    p.actions={};for(const clip of gltf.animations)p.actions[clip.name.toLowerCase()]=p.mixer.clipAction(clip);
    const idle=gltf.animations.find(c=>/idle|stand|breath|walk|run/i.test(c.name))||gltf.animations[0];
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
@@ -225,7 +239,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
     bodyAnchor.position.set(0,0,0);
     // Hide the player's own avatar in flat-screen preview and when the camera is inside it.
     playerAvatar={anchor:bodyAnchor,model:avatar,mixer:new THREE.AnimationMixer(avatar)};
-    if(!gltf.animations.length&&!Object.keys(sharedMotions).length)playerAvatar.fallbackRig=setupFallbackPose(avatar);
+    if(!gltf.animations.length)playerAvatar.fallbackRig=setupFallbackPose(avatar);
     mixers.push(playerAvatar.mixer);
     const idle=gltf.animations.find(c=>/idle|stand|breath|walk/i.test(c.name))||gltf.animations[0];
     if(idle)playerAvatar.mixer.clipAction(idle).play();attachSharedMotions(playerAvatar);
