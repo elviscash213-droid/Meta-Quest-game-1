@@ -99,6 +99,7 @@ function enemyAI(dt,now){
   const home=initialPositions[i];
   const destination=home.clone();
   const mind=p.psyche;
+  if(mind){mind.alertness=THREE.MathUtils.clamp((mind.alertness||0)-dt*.04,0,1);mind.lastSeen= mind.lastSeen||0;const seen=target.distanceTo(p.group.position)<28;if(seen){mind.lastSeen=now;mind.lastKnown=target.clone();mind.alertness=Math.min(1,mind.alertness+dt*.65)}}
   if(mind&&mind.goal==='flee'&&mind.lastThreatAt&&now-mind.lastThreatAt>11000)mind.goal='circle';
   if(mind){mind.fear=Math.max(0,mind.fear-dt*.025);mind.anger=Math.max(0,mind.anger-dt*.012);mind.grudge=Math.max(0,mind.grudge-dt*.001)}
   // During a live hit, the nearest fielder pursues the actual ball.
@@ -109,6 +110,8 @@ function enemyAI(dt,now){
   if(fighting&&mind&&now>mind.decisionAt){
    const nearbyFriends=players.filter(other=>other!==p&&other.alive&&other.group.position.distanceTo(p.group.position)<7).length;
    const panic=mind.fear-mind.courage-nearbyFriends*.025+(mind.grabbedUntil>now?.3:0);
+   const knowsPlayer=now-mind.lastSeen<6500;
+   if(!knowsPlayer&&mind.goal!=='flee'){mind.goal='search';mind.decisionAt=now+1800;continue}
    mind.goal=panic>.18?'flee':mind.anger+mind.aggression+mind.grudge*.3>.75?'attack':'circle';
    if(mind.socialTarget>=0&&players[mind.socialTarget]?.alive&&mind.relationships[mind.socialTarget]>.5&&mind.anger>.45)mind.goal='defend';
    mind.decisionAt=now+1100+Math.random()*1700;
@@ -120,6 +123,7 @@ function enemyAI(dt,now){
     destination.copy(target);
     if(mind?.goal==='attack'&&d<2.1)destination.copy(p.group.position);
     if(mind?.goal==='circle'&&d<3.5)destination.copy(p.group.position);
+    if(mind?.goal==='search'&&mind.lastKnown)destination.copy(mind.lastKnown);
     if(mind?.goal==='defend'&&mind.socialTarget>=0){const ally=players[mind.socialTarget];if(ally)destination.copy(ally.group.position).lerp(target,.6)}
     if(mind?.goal==='flee'){const retreat=p.group.position.clone().sub(target).setY(0);if(retreat.lengthSq()<.01)retreat.set(0,0,1);destination.copy(p.group.position).addScaledVector(retreat.normalize(),7)}
     else if(mind?.goal==='circle'){const tangent=new THREE.Vector3(-(target.z-p.group.position.z),0,target.x-p.group.position.x).normalize();destination.addScaledVector(tangent,2.5)}
@@ -142,13 +146,13 @@ function enemyAI(dt,now){
   // Attacks are telegraphed; damage lands only if the player remains in range.
   if(p.pendingAttackAt&&now>=p.pendingAttackAt){
    p.pendingAttackAt=0;
-   if(fighting&&p.alive&&p.group.position.distanceTo(target)<2.25){
+   if(fighting&&p.alive&&p.group.position.distanceTo(target)<2.25&&now-(mind?.lastSeen||0)<2500){
     playerHP=Math.max(0,playerHP-7);enemyHits++;
     beep(105,.13,'sawtooth');announce('NPC HIT · HEALTH '+playerHP);hud();
     if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
    }
   }
-  if(fighting&&(mind?.goal==='attack'||mind?.goal==='defend')&&!p.pendingAttackAt&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>2600){
+  if(fighting&&now-(mind?.lastSeen||0)<2500&&(mind?.goal==='attack'||mind?.goal==='defend')&&!p.pendingAttackAt&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>2600){
    p.lastAttack=now;p.pendingAttackAt=now+550;
    playCharacter(p,'attack');
   }
@@ -316,7 +320,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-facing-navigation-intelligence-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-npc-awareness-weapon-spin-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -519,6 +523,7 @@ function releaseHeldBat(){
  const body=new CANNON.Body({mass:1.1,shape:new CANNON.Box(new CANNON.Vec3(.07,.07,.43)),linearDamping:.12,angularDamping:.18});
  body.position.set(pos.x,pos.y,pos.z);body.quaternion.set(rot.x,rot.y,rot.z,rot.w);
  const vel=controller1.userData.releaseVelocity||new THREE.Vector3();
+ const spin=controller1.userData.releaseAngularVelocity||new THREE.Vector3();body.angularVelocity.set(spin.x,spin.y,spin.z);
  body.velocity.set(vel.x,vel.y,vel.z);
  physics.addBody(body);droppedWeapons.push({mesh:bat,body});
  importedBatReady=false;announce('BAT RELEASED · PICK UP WITH GRIP');
@@ -599,6 +604,9 @@ else if(ball.position.y<.12){if(state.contact&&velocity.z<0&&ball.position.z<-75
 const session=renderer.xr.getSession();if(session){trackedMelee(now,dt);
  const rightVelocity=controller1.getWorldPosition(new THREE.Vector3());const prevVelocity=controller1.userData.prevPosition;
  controller1.userData.releaseVelocity=prevVelocity?rightVelocity.clone().sub(prevVelocity).divideScalar(Math.max(dt,.008)).clampLength(0,14):new THREE.Vector3();controller1.userData.prevPosition=rightVelocity;
+ const currentRot=controller1.getWorldQuaternion(new THREE.Quaternion());const previousRot=controller1.userData.prevRotation;
+ if(previousRot){const deltaRot=previousRot.clone().invert().multiply(currentRot);const angle=2*Math.acos(THREE.MathUtils.clamp(deltaRot.w,-1,1));const axis=new THREE.Vector3(deltaRot.x,deltaRot.y,deltaRot.z);if(axis.lengthSq()>1e-7){axis.normalize().multiplyScalar(Math.min(18,angle/Math.max(dt,.008)));controller1.userData.releaseAngularVelocity=axis}}
+ controller1.userData.prevRotation=currentRot;
  const right=[...session.inputSources].find(s=>s.handedness==='right'&&s.gamepad);
  const left=[...session.inputSources].find(s=>s.handedness==='left'&&s.gamepad);
  function edge(key,pressed,fn){if(pressed&&!questButtons[key])fn();questButtons[key]=!!pressed}
