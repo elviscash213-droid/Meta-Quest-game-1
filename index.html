@@ -143,7 +143,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-7clip-soldier-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-action-lock-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -256,12 +256,16 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
 },undefined,e=>{modelStatus.textContent='ATHLETE IMPORT FAILED · '+url;reportError('Athlete import',e)}));
 function playCharacter(p,name){
  if(p.fallbackRig)p.fallbackRig.moving=name==='walk'||name==='run';
+ if((name==='idle'||name==='walk'||name==='run')&&p.actionLockUntil&&performance.now()<p.actionLockUntil)return;
  if(!p.mixer||!p.actions)return;
- const aliases={idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|hit)/i,death:/^(death|die|dead)/i};
+ const aliases={idle:/^(idle|stand|breath)/i,walk:/^(walk|jog)/i,run:/^(run|sprint)/i,attack:/^(attack|punch|hit|fire|shoot)/i,death:/^(death|die|dead|fall)/i};
  const requested=p.clips?.[name]||name;
  const direct=p.actions[requested]||p.actions[requested.toLowerCase()];
  const key=Object.keys(p.actions).find(k=>aliases[name]?.test(k));
- const next=direct||p.actions[key]||p.actions.idle||p.actions.Idle;
+ const next=direct||p.actions[key];
+ if(!next)return;
+ if(name==='attack')p.actionLockUntil=performance.now()+650;
+ if(name==='death')p.actionLockUntil=Infinity;
  if(!next||next===p.currentAction)return;
  next.enabled=true;next.reset().fadeIn(.2).play();
  p.currentAction?.fadeOut(.2);p.currentAction=next;
