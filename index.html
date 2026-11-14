@@ -143,11 +143,11 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.25);best.group.rotation.z+=.16;playCharacter(best,'run');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-20261114-0150';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-animated-import-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
-const athleteURLs=['https://models.codelove.in/models/sports-male-01.glb','https://models.codelove.in/models/sports-male-02.glb'];
+const athleteURLs=['https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb'];
 const athleteLoader=new GLTFLoader();athleteLoader.setMeshoptDecoder(MeshoptDecoder);
 // Pose imported skinned rigs even when their GLB lacks animation clips.
 // This modifies existing imported skeleton bones; it creates no visible geometry.
@@ -228,7 +228,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    p.actions={};for(const clip of gltf.animations){const action=p.mixer.clipAction(clip);p.actions[clip.name]=action;p.actions[clip.name.toLowerCase()]=action;}
    const idle=gltf.animations.find(c=>/idle|stand|breath|walk|run/i.test(c.name))||gltf.animations[0];
    if(idle){p.currentAction=p.mixer.clipAction(idle);p.currentAction.play()}
-   p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};attachSharedMotions(p);
+   p.clips={idle:idle?.name,walk:(gltf.animations.find(c=>/walk|jog/i.test(c.name))||idle)?.name,run:(gltf.animations.find(c=>/run|sprint/i.test(c.name))||idle)?.name};if(!gltf.animations.length)attachSharedMotions(p);
    p.role=fieldRoles[i];if(!gltf.animations.length&&!p.fallbackRig)console.warn('No recognized animation armature for',url);
   });
   if(variant===0&&!playerAvatar){
@@ -246,11 +246,11 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
     if(!gltf.animations.length)playerAvatar.fallbackRig=setupFallbackPose(avatar);
     mixers.push(playerAvatar.mixer);
     const idle=gltf.animations.find(c=>/idle|stand|breath|walk/i.test(c.name))||gltf.animations[0];
-    if(idle)playerAvatar.mixer.clipAction(idle).play();attachSharedMotions(playerAvatar);
+    if(idle)playerAvatar.mixer.clipAction(idle).play();if(!gltf.animations.length)attachSharedMotions(playerAvatar);
    }
   }
   athletesLoaded++;
-  modelStatus.textContent='BUILD '+BUILD_VERSION+' · ATHLETES '+athletesLoaded+'/2 · MOTIONS '+(Object.keys(sharedMotions).join(', ')||'LOADING');
+  modelStatus.textContent='BUILD '+BUILD_VERSION+' · ATHLETES '+athletesLoaded+'/'+athleteURLs.length+' · MOTIONS '+(Object.keys(sharedMotions).join(', ')||'LOADING');
  }).catch(e=>reportError('Athlete skeleton cloning',e));
 },undefined,e=>{modelStatus.textContent='ATHLETE IMPORT FAILED · '+url;reportError('Athlete import',e)}));
 function playCharacter(p,name){
