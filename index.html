@@ -69,7 +69,7 @@ document.getElementById('gameMode').onclick=()=>{ruleMode=ruleMode==='CHAOS'?'BA
 function enemyAI(dt,now){
  if(!aiOn||state.gameOver)return;
  const target=camera.getWorldPosition(new THREE.Vector3());target.y=0;
- const fighting=state.mode==='BRAWL';
+ const fighting=state.mode==='BRAWL'&&ruleMode==='CHAOS';
  let nearest=null,nearestDistance=Infinity;
  for(let i=0;i<players.length;i++){
   const p=players[i];if(!p.alive)continue;
@@ -82,7 +82,7 @@ function enemyAI(dt,now){
   }
   if(fighting&&i%3!==0){
    const d=target.distanceTo(p.group.position);
-   if(d<14)destination.copy(target);
+   if(d<9){destination.copy(target);const away=p.group.position.clone().sub(target).setY(0);if(away.lengthSq()<.01)away.set(0,0,1);destination.addScaledVector(away.normalize(),2.3)}
   }
   const delta=destination.sub(p.group.position);delta.y=0;
   const distance=delta.length();
@@ -93,7 +93,7 @@ function enemyAI(dt,now){
    p.group.lookAt(p.group.position.x+delta.x,0,p.group.position.z+delta.z);
    playCharacter(p,distance>4?'run':'walk');
   }else playCharacter(p,'idle');
-  if(fighting&&p.group.position.distanceTo(target)<1.7&&now-(p.lastAttack||0)>2100){
+  if(fighting&&p.group.position.distanceTo(target)<1.8&&now-(p.lastAttack||0)>2600){
    p.lastAttack=now;playerHP=Math.max(0,playerHP-7);enemyHits++;
    beep(105,.13,'sawtooth');announce('NPC PUNCH · HEALTH '+playerHP);
    if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
