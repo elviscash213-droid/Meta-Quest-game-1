@@ -183,8 +183,37 @@ function wound(p,force,point){
  if(p.injuries[limb]>=2){p.health=Math.max(0,p.health-1);p.group.rotation.z+=limb==='leftLeg'?-.12:limb==='rightLeg'?.12:0}
  return limb+' '+(p.injuries[limb]>=2?'FRACTURED':'INJURED');
 }
-function bloodBurst(){} // Await imported effect assets.
-function bloodStain(){} // Await imported decals.
+// Imported CC0 photoreal blood atlas, rendered as physics-driven sprite droplets and ground decals.
+const bloodAtlas=new THREE.TextureLoader().load('https://vibeassets.io/download/eb1umbfdob',()=>console.info('Imported CC0 blood atlas ready'),undefined,e=>reportError('Blood atlas import',e));
+bloodAtlas.colorSpace=THREE.SRGBColorSpace;
+const bloodTiles=[0,1,2,3].map(tile=>{
+ const texture=bloodAtlas.clone();texture.needsUpdate=true;texture.repeat.set(.5,.5);
+ texture.offset.set((tile%2)*.5,tile<2?.5:0);
+ return texture;
+});
+function bloodStain(point){
+ if(!bloodEnabled||!bloodAtlas.image)return;
+ const mat=new THREE.SpriteMaterial({map:bloodTiles[Math.random()<.7?2:3],transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1});
+ const decal=new THREE.Sprite(mat);decal.position.set(point.x,.025+Math.random()*.005,point.z);
+ decal.quaternion.setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2);
+ const size=.16+Math.random()*.34;decal.scale.set(size,size,1);
+ scene.add(decal);bloodDecals.push(decal);
+ if(bloodDecals.length>75){const old=bloodDecals.shift();scene.remove(old);old.material.dispose()}
+}
+function bloodBurst(point,direction,force){
+ if(!bloodEnabled||!bloodAtlas.image||!point)return;
+ const dir=direction?.clone()?.normalize()||new THREE.Vector3(0,0,1);
+ const count=Math.min(12,Math.max(4,Math.round(force*1.2)));
+ for(let i=0;i<count;i++){
+  const material=new THREE.SpriteMaterial({map:bloodTiles[i%3===0?0:3],transparent:true,depthWrite:false});
+  const drop=new THREE.Sprite(material);drop.position.copy(point);
+  const radius=.035+Math.random()*.075;drop.scale.set(radius,radius,1);
+  const velocity=dir.clone().multiplyScalar(1+Math.random()*Math.min(force,8)*.6);
+  velocity.add(new THREE.Vector3((Math.random()-.5)*3,Math.random()*3,(Math.random()-.5)*3));
+  scene.add(drop);effects.push({obj:drop,vel:velocity,life:1.3+Math.random()*.8,blood:true});
+ }
+}
+
 function buildRagdoll(p,impulse){
  if(p.ragdoll||!p.model)return;
  p.model.updateMatrixWorld(true);
@@ -320,7 +349,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-npc-awareness-weapon-spin-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-imported-blood-physics-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -638,7 +667,7 @@ enemyAI(dt,now);for(let i=0;i<players.length;i++){const p=players[i];if(p.alive)
 updateNPCGrips();physics.step(1/60,dt,3);
 for(const item of droppedWeapons){item.mesh.position.set(item.body.position.x,item.body.position.y,item.body.position.z);item.mesh.quaternion.set(item.body.quaternion.x,item.body.quaternion.y,item.body.quaternion.z,item.body.quaternion.w)}
 for(const r of ragdolls){r.visual.position.set(r.body.position.x,r.body.position.y,r.body.position.z);r.visual.quaternion.set(r.body.quaternion.x,r.body.quaternion.y,r.body.quaternion.z,r.body.quaternion.w)}
-for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);e.obj.geometry.dispose();e.obj.material.dispose();effects.splice(i,1)}}
+for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;e.obj.position.addScaledVector(e.vel,dt);e.vel.y-=9.81*dt;if(e.blood&&e.obj.position.y<=.04){bloodStain(e.obj.position);e.life=0}if(e.life<=0){scene.remove(e.obj);if(e.obj.geometry&&!e.obj.isSprite)e.obj.geometry.dispose();e.obj.material?.dispose();effects.splice(i,1)}}
 for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)updateFallbackPose(fallback,dt);
 for(const p of players){
  if(!p.ragdollParts)continue;
