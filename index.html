@@ -23,6 +23,7 @@ import * as THREE from 'three';
 import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 import {VRButton} from 'three/addons/webxr/VRButton.js';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {MeshoptDecoder} from 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/meshopt_decoder.module.js';
 const errors=[];const diag=document.getElementById('diagnostics');document.getElementById('closeDiagnostics').onclick=()=>diag.style.display='none';document.getElementById('showDiagnostics').onclick=()=>diag.style.display='block';
 function reportError(stage,error){const message=String(error?.message||error||'Unknown error');const entry=new Date().toLocaleTimeString()+' | '+stage+' | '+message;errors.push(entry);document.getElementById('errorCount').textContent=errors.length;document.getElementById('errorLines').textContent=errors.slice(-12).join('\n');document.getElementById('errorLines').style.whiteSpace='pre-wrap';diag.style.display='block';console.error('[NO RULES VR]',entry)}
 window.addEventListener('error',e=>reportError('JavaScript / resource',e.message||e.error));window.addEventListener('unhandledrejection',e=>reportError('Async operation',e.reason));
@@ -111,7 +112,7 @@ function combatHit(){if(ruleMode==='BASEBALL'){announce('COMBAT DISABLED IN BASE
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='Loading imported animated players…';document.body.appendChild(modelStatus);
 const mixers=[];
 const athleteURLs=['https://models.codelove.in/models/sports-male-01.glb','https://models.codelove.in/models/sports-male-02.glb'];
-const athleteLoader=new GLTFLoader();
+const athleteLoader=new GLTFLoader();athleteLoader.setMeshoptDecoder(MeshoptDecoder);
 let athletesLoaded=0;
 athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
  import('three/addons/utils/SkeletonUtils.js').then(({clone})=>{
