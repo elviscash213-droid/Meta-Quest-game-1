@@ -40,7 +40,7 @@ function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);sce
 const stadiumColliders=[];
 function blockedByStadium(pos,radius=.34){return stadiumColliders.some(b=>pos.y<b.max.y&&pos.y+1.5>b.min.y&&pos.x>b.min.x-radius&&pos.x<b.max.x+radius&&pos.z>b.min.z-radius&&pos.z<b.max.z+radius)}
 const importedStadium=new THREE.Group();scene.add(importedStadium);
-const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
+const assetUrl='/assets/modern_stadium.glb';
 const loadStatus=document.createElement('div');loadStatus.style.cssText='position:fixed;top:64px;left:12px;color:white;background:#071322aa;padding:5px 9px;border-radius:6px;font:12px system-ui';loadStatus.textContent='Loading imported stadium…';document.body.appendChild(loadStatus);
 new GLTFLoader().load(assetUrl,gltf=>{
  const stadium=gltf.scene;
@@ -65,7 +65,7 @@ new GLTFLoader().load(assetUrl,gltf=>{
  
  loadStatus.textContent='IMPORTED STADIUM LOADED · NO GENERATED ASSETS';
  gltf.animations.forEach(clip=>{const mixer=new THREE.AnimationMixer(stadium);mixer.clipAction(clip).play();stadium.userData.mixer=mixer});
-},undefined,e=>{loadStatus.textContent='ERROR: IMPORTED STADIUM FAILED — NO FALLBACK';reportError('Stadium GLB '+assetUrl,e)});
+},undefined,e=>{loadStatus.textContent='NEW STADIUM FILE NOT YET DEPLOYED';reportError('Stadium GLB '+assetUrl,e)});
 const rig=new THREE.Group();scene.add(rig);rig.add(camera);rig.position.set(.85,0,.85);rig.rotation.y=Math.PI;
 const vrCanvas=document.createElement('canvas');vrCanvas.width=1024;vrCanvas.height=256;const vrCtx=vrCanvas.getContext('2d');const vrTexture=new THREE.CanvasTexture(vrCanvas);
 const vrBoard=new THREE.Group();vrBoard.position.set(0,-.32,-1.7);camera.add(vrBoard);
@@ -402,7 +402,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-field-fit-stadium-collision-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-modern-stadium-asset-loader-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
