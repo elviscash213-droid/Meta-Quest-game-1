@@ -94,7 +94,8 @@ function enemyAI(dt,now){
   const distance=delta.length();
   if(distance>.45){
    const slow=(p.injuries?.leftLeg>=2||p.injuries?.rightLeg>=2)?.3:1;
-   const speed=fighting?(distance>7?3.8:2.3):2.3;
+   const speed=fighting?(distance>7?3.2:1.9):2.3;
+   if(p.staggerUntil&&now<p.staggerUntil){playCharacter(p,'hit');continue}
    p.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*speed*slow));
    p.group.lookAt(p.group.position.x+delta.x,0,p.group.position.z+delta.z);
    playCharacter(p,distance>4?'run':'walk');
@@ -164,7 +165,7 @@ function buildRagdoll(p,impulse){
   const bone=bones.find(b=>re.test(b.name));if(!bone)continue;
   const world=bone.getWorldPosition(new THREE.Vector3());
   const quat=bone.getWorldQuaternion(new THREE.Quaternion());
-  const body=new CANNON.Body({mass,shape:new CANNON.Sphere(radius),linearDamping:.22,angularDamping:.65,collisionFilterGroup:2,collisionFilterMask:1});
+  const body=new CANNON.Body({mass,shape:new CANNON.Sphere(radius),linearDamping:.52,angularDamping:.82,collisionFilterGroup:2,collisionFilterMask:1});
   body.position.set(world.x,world.y,world.z);body.quaternion.set(quat.x,quat.y,quat.z,quat.w);
   physics.addBody(body);parts.set(id,{bone,body,parentId,restPosition:bone.position.clone(),restQuaternion:bone.quaternion.clone()});
  }
@@ -172,9 +173,9 @@ function buildRagdoll(p,impulse){
  for(const part of parts.values()){
   const parent=parts.get(part.parentId);if(!parent)continue;
   const a=parent.body.position,b=part.body.position;
-  const midpoint=new CANNON.Vec3((a.x+b.x)/2,(a.y+b.y)/2,(a.z+b.z)/2);
-  const pivotA=midpoint.vsub(a),pivotB=midpoint.vsub(b);
-  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,250);physics.addConstraint(joint);constraints.push(joint);
+  // Anchor at the actual child joint, not the midpoint between limb origins.
+  const pivotA=b.vsub(a),pivotB=new CANNON.Vec3(0,0,0);
+  const joint=new CANNON.PointToPointConstraint(parent.body,pivotA,part.body,pivotB,120);physics.addConstraint(joint);constraints.push(joint);
  }
  p.ragdoll=true;p.ragdollParts=parts;p.ragdollConstraints=constraints;p.fallTime=0;p.actionLockUntil=Infinity;
  p.mixer?.stopAllAction();
@@ -184,14 +185,19 @@ function buildRagdoll(p,impulse){
 }
 function recoverNPC(p){
  if(!p.ragdollParts)return;
+ const fallenPelvis=p.ragdollParts.get('pelvis')?.body.position;
+ const partsRecoveryPosition=fallenPelvis?new THREE.Vector3(fallenPelvis.x,0,fallenPelvis.z):null;
  for(const joint of p.ragdollConstraints||[])physics.removeConstraint(joint);
  for(const part of p.ragdollParts.values())physics.removeBody(part.body);
  for(const {bone,restPosition,restQuaternion} of p.ragdollParts.values()){
   bone.position.copy(restPosition);bone.quaternion.copy(restQuaternion);
  }
  p.ragdollParts=null;p.ragdollConstraints=null;p.ragdoll=false;
- p.group.rotation.set(0,0,0);p.group.position.copy(initialPositions[players.indexOf(p)]);
- p.health=8;p.alive=true;p.actionLockUntil=0;p.pendingAttackAt=0;
+ p.group.rotation.set(0,0,0);
+ const rest=initialPositions[players.indexOf(p)];
+ const pelvis=partsRecoveryPosition||rest;
+ p.group.position.set(pelvis.x,0,pelvis.z);
+ p.health=8;p.alive=true;p.actionLockUntil=0;p.pendingAttackAt=0;p.staggerUntil=0;
  playCharacter(p,'idle');
 }
 function hitEffect(){} // Await imported impact effect.
@@ -203,13 +209,13 @@ function combatHit(){if(state.gameOver)return;
  let best=null,bestDist=Infinity;
  for(const p of players){if(!p.alive)continue;const target=p.group.position.clone().add(new THREE.Vector3(0,1.2,0));const diff=target.sub(origin);const along=diff.dot(dir);const lateral=diff.clone().addScaledVector(dir,-along).length();if(along>0&&along<(weaponKind==='BAT'?2.6:1.45)&&lateral<.95&&along<bestDist){best=p;bestDist=along}}
  if(!best){announce('MISS');return}
- const force=weaponKind==='BAT'?8:4;best.lastAttack=performance.now()+1400;best.health-=weaponKind==='BAT'?2:1;
+ const force=weaponKind==='BAT'?8:4;best.lastAttack=performance.now()+1400;best.staggerUntil=performance.now()+650;best.health-=weaponKind==='BAT'?2:1;
  const pos=best.group.position.clone().add(new THREE.Vector3(0,1.4,0));hitEffect(pos);const damage=wound(best,force,pos);bloodBurst(pos,dir,force);if(best.injuries.leftLeg>=2||best.injuries.rightLeg>=2)best.group.position.y=-.22;
  if(best.health<=0){best.alive=false;state.kos++;buildRagdoll(best,dir.clone().multiplyScalar(force).add(new THREE.Vector3(0,3,0)));announce('KNOCKDOWN!');hud()}
- else{best.group.position.addScaledVector(dir,.25);playCharacter(best,'hit');announce(damage)}
+ else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-npc-recovery-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-physical-stagger-joints-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -438,11 +444,11 @@ function trackedMelee(now,dt){
    const direction=tip.clone().sub(previous).normalize();
    const force=holdingBat?Math.min(11,4+speed):Math.min(7,2+speed*.6);
    p.health-=holdingBat?2:1;
-   p.lastAttack=now+900;
+   p.lastAttack=now+900;p.staggerUntil=now+Math.min(850,300+force*55);
    const impact=p.group.position.clone().add(new THREE.Vector3(0,1.2,0));
    const injury=wound(p,force,impact);bloodBurst(impact,direction,force);
    if(p.health<=0){p.alive=false;state.kos++;buildRagdoll(p,direction.multiplyScalar(force));hud();announce('KNOCKDOWN')}
-   else{p.group.position.addScaledVector(direction,.16);playCharacter(p,'hit');announce(injury)}
+   else{p.group.position.addScaledVector(direction,Math.min(.24,force*.025));playCharacter(p,'hit');announce(injury)}
    break;
   }
  }
@@ -486,7 +492,7 @@ for(const mixer of mixers)mixer.update(dt);for(const fallback of fallbackRigs)up
 for(const p of players){
  if(!p.ragdollParts)continue;
  p.fallTime+=dt;
- if(p.fallTime>9){recoverNPC(p);continue}
+ if(p.fallTime>7){recoverNPC(p);continue}
  // Prevent excessive velocity and perpetual ragdoll jitter after impact.
  for(const part of p.ragdollParts.values()){
   const b=part.body;
