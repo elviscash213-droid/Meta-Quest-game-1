@@ -59,7 +59,9 @@ new GLTFLoader().load(assetUrl,gltf=>{
  stadium.position.copy(homePosition.applyAxisAngle(up, yaw).negate());
  importedStadium.add(stadium);
  stadium.updateMatrixWorld(true);
- addMetalBat(stadium);
+ addEquipment(stadium,'128-baseball-bat-metal','METAL BAT',.82,1.1,[2.15,.9,.45]);
+ addEquipment(stadium,'149-field-rake','FIELD RAKE',1.36,1.45,[-2.6,.9,1.4]);
+ addEquipment(stadium,'115-batting-helmet','BATTING HELMET',.32,.48,[2.6,.9,1.65]);
  for (let i = 0; i < players.length; i++) {
   players[i].group.position.copy(initialPositions[i]);
  }
@@ -484,7 +486,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='quest-npc-awareness-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='quest-imported-equipment-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -725,8 +727,8 @@ new GLTFLoader().load(knifeAsset,g=>{knifeObject=g.scene;const bounds=new THREE.
 function pickupKnife(){if(!knifeReady||knifeHeld||!knifeObject||batHeld)return false;const pos=controller1.getWorldPosition(new THREE.Vector3());if(knifeObject.getWorldPosition(new THREE.Vector3()).distanceTo(pos)>.65)return false;if(knifeBody){physics.removeBody(knifeBody);knifeBody=null}scene.attach(knifeObject);controller1.attach(knifeObject);knifeObject.position.set(0,-.055,-.16);knifeObject.rotation.set(-Math.PI/2,0,0);knifeHeld=true;weaponKind='KNIFE';state.mode='BRAWL';document.getElementById('weaponSwitch').textContent='WEAPON: KNIFE';announce('KNIFE GRIPPED');return true}
 function dropKnife(){if(!knifeHeld||!knifeObject)return;knifeObject.updateMatrixWorld(true);scene.attach(knifeObject);knifeHeld=false;const p=knifeObject.position;knifeBody=new CANNON.Body({mass:.35,shape:new CANNON.Box(new CANNON.Vec3(.035,.025,.14)),linearDamping:.16,angularDamping:.2});knifeBody.position.set(p.x,p.y,p.z);const v=controller1.userData.releaseVelocity||new THREE.Vector3();knifeBody.velocity.set(v.x,v.y,v.z);physics.addBody(knifeBody);announce('KNIFE DROPPED')}
 
-function addMetalBat(stadium){
- const source=stadium.getObjectByName('128-baseball-bat-metal');
+function addEquipment(stadium,node,name,length,mass,position){
+ const source=stadium.getObjectByName(node);
  if(!source)return;
  const bat=new THREE.Group();
  const geometry=source.clone(true);
@@ -742,12 +744,13 @@ function addMetalBat(stadium){
  // The held bat points along the controller's local negative Z after its grip rotation.
  if(size.x>size.y&&size.x>size.z)aligned.rotation.z=Math.PI/2;
  else if(size.z>size.y)aligned.rotation.x=Math.PI/2;
- const length=Math.max(size.x,size.y,size.z);
- if(length<=0)return;
- aligned.scale.setScalar(.82/length);
+ const sourceLength=Math.max(size.x,size.y,size.z);
+ if(sourceLength<=0)return;
+ aligned.scale.setScalar(length/sourceLength);
  bat.add(aligned);
- bat.userData.batName='METAL BAT';
- bat.position.set(2.15,.9,.45);
+ const halfWidth=Math.max(.04,Math.min(size.x,size.y,size.z)*length/sourceLength*.5);
+ bat.userData.equipment={name,length,mass,halfWidth,baseball:name==='METAL BAT'};
+ bat.position.fromArray(position);
  bat.rotation.z=Math.PI/2;
  scene.add(bat);
  droppedWeapons.push({mesh:bat,body:null});
@@ -760,7 +763,8 @@ function releaseHeldBat(){
  const bat=weapon.children[0];if(!bat)return;
  const pos=bat.getWorldPosition(new THREE.Vector3()),rot=bat.getWorldQuaternion(new THREE.Quaternion());
  weapon.remove(bat);scene.add(bat);bat.position.copy(pos);bat.quaternion.copy(rot);
- const body=new CANNON.Body({mass:1.1,shape:new CANNON.Box(new CANNON.Vec3(.07,.43,.07)),linearDamping:.12,angularDamping:.18});
+ const {mass=1.1,length=.86,halfWidth=.07}=bat.userData.equipment||{};
+ const body=new CANNON.Body({mass,shape:new CANNON.Box(new CANNON.Vec3(halfWidth,length*.5,halfWidth)),linearDamping:.12,angularDamping:.18});
  body.position.set(pos.x,pos.y,pos.z);body.quaternion.set(rot.x,rot.y,rot.z,rot.w);
  const vel=controller1.userData.releaseVelocity||new THREE.Vector3();
  const spin=controller1.userData.releaseAngularVelocity||new THREE.Vector3();body.angularVelocity.set(spin.x,spin.y,spin.z);
@@ -776,7 +780,7 @@ function parkReserveBat(spare=weapon.children[0]){
  droppedWeapons.push({mesh:spare,body:null});
 }
 function grabNearbyBat(){
- if(batHeld||weaponKind!=='BAT')return;
+ if(batHeld||knifeHeld)return;
  const hand=controller1.getWorldPosition(new THREE.Vector3());
  let nearest=null,dist=1.05;
  for(const item of droppedWeapons){const d=item.mesh.position.distanceTo(hand);if(d<dist){nearest=item;dist=d}}
@@ -785,11 +789,11 @@ function grabNearbyBat(){
   const i=droppedWeapons.indexOf(nearest);droppedWeapons.splice(i,1);
   if(nearest.body)physics.removeBody(nearest.body);
   scene.remove(nearest.mesh);
-  weapon.add(nearest.mesh);nearest.mesh.position.set(0,0,-.4);nearest.mesh.rotation.set(-Math.PI/2,0,0);
+  weapon.add(nearest.mesh);nearest.mesh.position.set(0,0,-(nearest.mesh.userData.equipment?.length??.82)*.5);nearest.mesh.rotation.set(-Math.PI/2,0,0);
   importedBatReady=true;
  }else if(!importedBatReady){announce('MOVE HAND CLOSER TO BAT');return}
- batHeld=true;
- const name=weapon.children[0]?.userData.batName||'BAT';
+ batHeld=true;weaponKind='BAT';
+ const name=weapon.children[0]?.userData.equipment?.name||'BAT';
  document.getElementById('weaponSwitch').textContent='WEAPON: '+name;
  announce(name+' GRIPPED');
 }let importedBatReady=false;new GLTFLoader().load('https://cdn.3dassets.dev/assets/33763/v1/model.glb',g=>{const bat=g.scene;bat.rotation.x=-Math.PI/2;bat.position.set(0,0,-.4);if(weapon.children.length)parkReserveBat(bat);else {weapon.add(bat);importedBatReady=true}loadStatus.textContent+=' · BAT IMPORTED'},undefined,e=>reportError('Bat import',e));
@@ -798,7 +802,7 @@ renderer.xr.addEventListener('sessionend',()=>{meleeHistory.fill(null);releaseNP
 const batNear=new THREE.Vector3(),batFar=new THREE.Vector3(),batMotion=new THREE.Vector3(),batClosest=new THREE.Vector3();
 function segmentDistanceSquared(p,a,b){const ab=b.clone().sub(a);const len=ab.lengthSq();const t=len>1e-8?THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/len,0,1):0;batClosest.copy(a).addScaledVector(ab,t);return p.distanceToSquared(batClosest)}
 function physicalBatContact(now,dt){
- if(!ball||!state.flying||state.contact||state.mode!=='BAT'||!batHeld||!importedBatReady||weaponKind!=='BAT')return;
+ if(!ball||!state.flying||state.contact||state.mode!=='BAT'||!batHeld||!importedBatReady||weaponKind!=='BAT'||weapon.children[0]?.userData.equipment?.baseball===false)return;
  // Tracked bat shaft, using the same controller-local alignment as the imported GLB.
  batNear.copy(controller1.localToWorld(new THREE.Vector3(0,0,-.37)));
  batFar.copy(controller1.localToWorld(new THREE.Vector3(0,0,-.92)));
@@ -857,7 +861,7 @@ function meleePose(i){
  if(!controller.parent||npcGrips[i])return null;
  const bat=i===1&&batHeld&&weaponKind==='BAT'&&importedBatReady;
  const knife=i===1&&knifeHeld&&weaponKind==='KNIFE';
- const reach=bat?.85:knife?.28:.075;
+ const reach=bat?(weapon.children[0]?.userData.equipment?.length??.85):knife?.28:.075;
  return {bat,knife,tip:controller.localToWorld(new THREE.Vector3(0,0,-reach))};
 }
 function trackedMelee(i,now,dt){
