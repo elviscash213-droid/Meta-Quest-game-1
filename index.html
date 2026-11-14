@@ -99,6 +99,7 @@ function enemyAI(dt,now){
   const home=initialPositions[i];
   const destination=home.clone();
   const mind=p.psyche;
+  if(mind&&mind.goal==='flee'&&mind.lastThreatAt&&now-mind.lastThreatAt>11000)mind.goal='circle';
   if(mind){mind.fear=Math.max(0,mind.fear-dt*.025);mind.anger=Math.max(0,mind.anger-dt*.012);mind.grudge=Math.max(0,mind.grudge-dt*.001)}
   // During a live hit, the nearest fielder pursues the actual ball.
   if(!fighting&&state.contact&&state.flying&&ball&&i!==8){
@@ -110,19 +111,21 @@ function enemyAI(dt,now){
    const panic=mind.fear-mind.courage-nearbyFriends*.025+(mind.grabbedUntil>now?.3:0);
    mind.goal=panic>.18?'flee':mind.anger+mind.aggression+mind.grudge*.3>.75?'attack':'circle';
    if(mind.socialTarget>=0&&players[mind.socialTarget]?.alive&&mind.relationships[mind.socialTarget]>.5&&mind.anger>.45)mind.goal='defend';
-   mind.decisionAt=now+650+Math.random()*1400;
+   mind.decisionAt=now+1100+Math.random()*1700;
   }
   if(fighting){
    // Engage across the field instead of waiting until the player walks within 9 metres.
    const d=target.distanceTo(p.group.position);
    if(d<85){
     destination.copy(target);
+    if(mind?.goal==='attack'&&d<2.1)destination.copy(p.group.position);
+    if(mind?.goal==='circle'&&d<3.5)destination.copy(p.group.position);
     if(mind?.goal==='defend'&&mind.socialTarget>=0){const ally=players[mind.socialTarget];if(ally)destination.copy(ally.group.position).lerp(target,.6)}
-    if(mind?.goal==='flee'){const retreat=p.group.position.clone().sub(target).setY(0).normalize();destination.copy(p.group.position).addScaledVector(retreat,7)}
+    if(mind?.goal==='flee'){const retreat=p.group.position.clone().sub(target).setY(0);if(retreat.lengthSq()<.01)retreat.set(0,0,1);destination.copy(p.group.position).addScaledVector(retreat.normalize(),7)}
     else if(mind?.goal==='circle'){const tangent=new THREE.Vector3(-(target.z-p.group.position.z),0,target.x-p.group.position.x).normalize();destination.addScaledVector(tangent,2.5)}
     const away=p.group.position.clone().sub(target).setY(0);
     if(away.lengthSq()<.01)away.set(0,0,1);
-    if(mind?.goal!=='flee')destination.addScaledVector(away.normalize(),1.55+(i%3)*.35);
+    if(mind?.goal!=='flee'&&d>2.1)destination.addScaledVector(away.normalize(),1.55+(i%3)*.35);
    }
   }
   const delta=destination.sub(p.group.position);delta.y=0;
@@ -132,9 +135,10 @@ function enemyAI(dt,now){
    const speed=fighting?(distance>7?3.2:1.9):2.3;
    if(p.staggerUntil&&now<p.staggerUntil){playCharacter(p,'hit');continue}
    p.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*speed*slow));
-   p.group.lookAt(p.group.position.x+delta.x,0,p.group.position.z+delta.z);
+   const heading=Math.atan2(delta.x,delta.z);
+   p.group.rotation.y+=Math.atan2(Math.sin(heading-p.group.rotation.y),Math.cos(heading-p.group.rotation.y))*Math.min(1,dt*8);
    playCharacter(p,distance>4?'run':'walk');
-  }else playCharacter(p,'idle');
+  }else {playCharacter(p,'idle');if(fighting&&mind?.goal!=='flee'){const face=target.clone().sub(p.group.position);const heading=Math.atan2(face.x,face.z);p.group.rotation.y+=Math.atan2(Math.sin(heading-p.group.rotation.y),Math.cos(heading-p.group.rotation.y))*Math.min(1,dt*6)}}
   // Attacks are telegraphed; damage lands only if the player remains in range.
   if(p.pendingAttackAt&&now>=p.pendingAttackAt){
    p.pendingAttackAt=0;
@@ -152,7 +156,7 @@ function enemyAI(dt,now){
  if(nearest&&ball&&state.contact&&state.flying){
   const destination=ball.position.clone();destination.y=0;
   const delta=destination.sub(nearest.group.position),distance=delta.length();
-  if(distance>.45){nearest.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*4.2));nearest.group.lookAt(destination.x,0,destination.z);playCharacter(nearest,'run')}
+  if(distance>.45){nearest.group.position.addScaledVector(delta.normalize(),Math.min(distance,dt*4.2));const heading=Math.atan2(delta.x,delta.z);nearest.group.rotation.y+=Math.atan2(Math.sin(heading-nearest.group.rotation.y),Math.cos(heading-nearest.group.rotation.y))*Math.min(1,dt*8);playCharacter(nearest,'run')}
   if(distance<1.15&&ball.position.y<2.5){
    state.flying=false;scene.remove(ball);ball=null;
    advance(1);announce('FIELDER RECOVERS BALL · SINGLE');
@@ -312,7 +316,7 @@ function combatHit(){if(state.gameOver)return;
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-npc-social-threat-memory-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-facing-navigation-intelligence-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -393,7 +397,7 @@ athleteURLs.forEach((url,variant)=>athleteLoader.load(url,gltf=>{
    const scale=1.8/height;
    model.scale.setScalar(scale);
    model.position.set(-box.getCenter(new THREE.Vector3()).x*scale,-box.min.y*scale,-box.getCenter(new THREE.Vector3()).z*scale);
-   model.rotation.y=Math.PI;
+   model.rotation.y=0; // Three.js +Z character heading; group handles world-facing orientation.
    p.group.add(model);p.model=model;
    model.traverse(o=>{if(o.isMesh){o.frustumCulled=false;o.castShadow=true}});
    // Attach motion clips only after the character mixer has been created.
