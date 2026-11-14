@@ -35,7 +35,7 @@ const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,500);came
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));renderer.xr.enabled=true;renderer.shadowMap.enabled=false;document.body.appendChild(renderer.domElement);document.body.appendChild(VRButton.createButton(renderer));
 scene.add(new THREE.HemisphereLight(0xffffff,0x567343,2));const sun=new THREE.DirectionalLight(0xffffff,2.3);sun.position.set(-30,65,25);scene.add(sun);
 // Imported-only visuals: no generated character or environment meshes.
-function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);return {group,health:8,alive:true}}
+function person(x,z){const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);return {group,health:8,alive:true,psyche:{courage:.25+Math.random()*.7,aggression:.2+Math.random()*.8,loyalty:Math.random(),fear:0,anger:0,trust:0,temperament:Math.random(),decisionAt:0,goal:'idle',memory:{lastHitAt:0,lastThreat:null},idleUntil:0}}}
 // Phase 1: authentic third-party CC0 stadium scene (not generated in this project).
 const importedStadium=new THREE.Group();scene.add(importedStadium);
 const assetUrl='https://cdn.3dassets.dev/assets/33786/v1/model.glb';
@@ -75,19 +75,29 @@ function enemyAI(dt,now){
   const p=players[i];if(!p.alive)continue;
   const home=initialPositions[i];
   const destination=home.clone();
+  const mind=p.psyche;
+  if(mind){mind.fear=Math.max(0,mind.fear-dt*.025);mind.anger=Math.max(0,mind.anger-dt*.012)}
   // During a live hit, the nearest fielder pursues the actual ball.
   if(!fighting&&state.contact&&state.flying&&ball&&i!==8){
    const distanceToBall=p.group.position.distanceTo(ball.position);
    if(distanceToBall<nearestDistance){nearest=p;nearestDistance=distanceToBall}
+  }
+  if(fighting&&mind&&now>mind.decisionAt){
+   const nearbyFriends=players.filter(other=>other!==p&&other.alive&&other.group.position.distanceTo(p.group.position)<7).length;
+   const panic=mind.fear-mind.courage-nearbyFriends*.025;
+   mind.goal=panic>.18?'flee':mind.anger+mind.aggression>.75?'attack':'circle';
+   mind.decisionAt=now+650+Math.random()*1400;
   }
   if(fighting){
    // Engage across the field instead of waiting until the player walks within 9 metres.
    const d=target.distanceTo(p.group.position);
    if(d<85){
     destination.copy(target);
+    if(mind?.goal==='flee'){const retreat=p.group.position.clone().sub(target).setY(0).normalize();destination.copy(p.group.position).addScaledVector(retreat,7)}
+    else if(mind?.goal==='circle'){const tangent=new THREE.Vector3(-(target.z-p.group.position.z),0,target.x-p.group.position.x).normalize();destination.addScaledVector(tangent,2.5)}
     const away=p.group.position.clone().sub(target).setY(0);
     if(away.lengthSq()<.01)away.set(0,0,1);
-    destination.addScaledVector(away.normalize(),1.55+(i%3)*.35);
+    if(mind?.goal!=='flee')destination.addScaledVector(away.normalize(),1.55+(i%3)*.35);
    }
   }
   const delta=destination.sub(p.group.position);delta.y=0;
@@ -109,7 +119,7 @@ function enemyAI(dt,now){
     if(playerHP<=0){state.gameOver=true;announce('KNOCKED OUT · MATCH OVER')}
    }
   }
-  if(fighting&&!p.pendingAttackAt&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>2600){
+  if(fighting&&mind?.goal==='attack'&&!p.pendingAttackAt&&p.group.position.distanceTo(target)<2.1&&now-(p.lastAttack||0)>2600){
    p.lastAttack=now;p.pendingAttackAt=now+550;
    playCharacter(p,'attack');
   }
@@ -197,7 +207,7 @@ function recoverNPC(p){
  const rest=initialPositions[players.indexOf(p)];
  const pelvis=partsRecoveryPosition||rest;
  p.group.position.set(pelvis.x,0,pelvis.z);
- p.health=8;p.alive=true;p.actionLockUntil=0;p.pendingAttackAt=0;p.staggerUntil=0;
+ p.health=8;p.alive=true;if(p.psyche){p.psyche.fear=Math.max(.35,p.psyche.fear);p.psyche.anger*=.5;p.psyche.decisionAt=0;}p.actionLockUntil=0;p.pendingAttackAt=0;p.staggerUntil=0;
  playCharacter(p,'idle');
 }
 // Quest grip physics: each hand can constrain an imported NPC's ragdoll limb.
@@ -269,12 +279,13 @@ function combatHit(){if(state.gameOver)return;
  for(const p of players){if(!p.alive)continue;const target=p.group.position.clone().add(new THREE.Vector3(0,1.2,0));const diff=target.sub(origin);const along=diff.dot(dir);const lateral=diff.clone().addScaledVector(dir,-along).length();if(along>0&&along<(weaponKind==='BAT'?2.6:1.45)&&lateral<.95&&along<bestDist){best=p;bestDist=along}}
  if(!best){announce('MISS');return}
  const force=weaponKind==='BAT'?8:4;best.lastAttack=performance.now()+1400;best.staggerUntil=performance.now()+650;best.health-=weaponKind==='BAT'?2:1;
+ if(best.psyche){best.psyche.fear=Math.min(2,best.psyche.fear+(weaponKind==='BAT'?.55:.25));best.psyche.anger=Math.min(2,best.psyche.anger+.3);best.psyche.memory.lastHitAt=now;best.psyche.decisionAt=0}
  const pos=best.group.position.clone().add(new THREE.Vector3(0,1.4,0));hitEffect(pos);const damage=wound(best,force,pos);bloodBurst(pos,dir,force);if(best.injuries.leftLeg>=2||best.injuries.rightLeg>=2)best.group.position.y=-.22;
  if(best.health<=0){best.alive=false;state.kos++;buildRagdoll(best,dir.clone().multiplyScalar(force).add(new THREE.Vector3(0,3,0)));announce('KNOCKDOWN!');hud()}
  else{best.group.position.addScaledVector(dir,.18);playCharacter(best,'hit');announce(damage)}
 }
 
-const BUILD_VERSION='phase1-imported-controller-hands-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
+const BUILD_VERSION='phase1-npc-personality-memory-20261114';console.info('NO RULES VR BUILD',BUILD_VERSION);
 const modelStatus=document.createElement('div');modelStatus.style.cssText='position:fixed;top:96px;left:12px;background:#071322bb;color:white;padding:5px 9px;border-radius:6px;font:12px system-ui';modelStatus.textContent='BUILD '+BUILD_VERSION+' · Loading imported players…';document.body.appendChild(modelStatus);
 const mixers=[];
 let playerAvatar=null;
@@ -540,6 +551,7 @@ function trackedMelee(now,dt){
    const direction=tip.clone().sub(previous).normalize();
    const force=holdingBat?Math.min(11,4+speed):Math.min(7,2+speed*.6);
    p.health-=holdingBat?2:1;
+   if(p.psyche){p.psyche.fear=Math.min(2,p.psyche.fear+(holdingBat?.55:.25));p.psyche.anger=Math.min(2,p.psyche.anger+.3);p.psyche.memory.lastHitAt=now;p.psyche.decisionAt=0}
    p.lastAttack=now+900;p.staggerUntil=now+Math.min(850,300+force*55);
    const impact=p.group.position.clone().add(new THREE.Vector3(0,1.2,0));
    const injury=wound(p,force,impact);bloodBurst(impact,direction,force);
